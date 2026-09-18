@@ -8,19 +8,50 @@
 
 ## 1. 启动
 
+### 桌面快捷方式（推荐）
+
+已经在你桌面生成了两个快捷方式：
+
+| 快捷方式 | 作用 |
+| --- | --- |
+| **日记 · 桑榆下** | 后台起服务并自动打开浏览器，全程无黑框窗口；已在运行则只打开页面，不会重复启动 |
+| **日记 · 停止服务** | 停掉后台服务 |
+
+把「日记 · 桑榆下」拖到任务栏就能固定成任务栏按钮。想开机自启：
+<kbd>Win</kbd>+<kbd>R</kbd> 输入 `shell:startup`，把启动快捷方式复制进去。
+
+快捷方式丢了或换了电脑，重新生成一次即可：
+
 ```powershell
-node _tools/server.mjs          # 默认 http://127.0.0.1:8787
-node _tools/server.mjs 9000     # 指定端口
+powershell -ExecutionPolicy Bypass -File _tools\setup-desktop.ps1
 ```
 
-浏览器打开提示的地址。**编辑、记账、Git 操作都需要这个服务**，
-所以不要用「双击 index.html」的方式——那样只能阅读，不能写入。
+### 命令行
+
+```powershell
+node _tools/server.mjs              # 默认 http://127.0.0.1:8787
+node _tools/server.mjs 9000         # 指定端口
+node _tools/server.mjs --open       # 启动后自动开浏览器
+node _tools/server.mjs --stop       # 停掉正在运行的服务
+```
+
+或者用启动器（带 Node 环境检查与中文提示）：
+
+```powershell
+_tools\launch.cmd            # 启动并打开浏览器
+_tools\launch.cmd --status   # 查看运行状态
+_tools\launch.cmd --stop     # 停止
+```
+
+**编辑、记账、Git 操作都需要这个后台服务**，所以不要用「双击 `index.html`」的方式
+—— 那样只能阅读，不能写入。服务是**纯 Node 内置模块，零 npm 依赖**，
+整个 `_tools/` 就是全部后端，拷走整个文件夹即可在别的机器上跑。
 
 ### 自测
 
 ```powershell
 node _tools/test-api.mjs        # 服务端接口回归（35 项）
-node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-ui.mjs"   # 界面回归（54 项）
+node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-ui.mjs"   # 界面回归（57 项）
 ```
 
 ---
@@ -117,6 +148,8 @@ node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-ui.m
 │  └─ ledger.json             记账数据
 ├─ _tools/
 │  ├─ server.mjs              本地服务：文件读写 / 上传 / 账本 / 配置 / Git
+│  ├─ launch.cmd              启动器（纯 ASCII + CRLF，cmd 的硬性要求）
+│  ├─ setup-desktop.ps1       生成桌面启动 / 停止快捷方式
 │  ├─ build-index.mjs         单独重建 entries/index.json
 │  ├─ new-entry.mjs           命令行新建日记
 │  ├─ test-api.mjs            接口回归测试（35 项）

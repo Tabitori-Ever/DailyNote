@@ -3,6 +3,8 @@ node_modules/
 *.log
 
 # 应用运行时数据（本地生成，不需要版本管理）
+data/server.json
+data/server.log
 data/ledger.json.bak
 *.tmp
 *.bak

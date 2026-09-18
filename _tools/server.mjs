@@ -2,8 +2,11 @@
 /**
  * server.mjs — 日记系统本地服务
  *
- *   node server.mjs             # http://127.0.0.1:8787
- *   node server.mjs 9000        # 指定端口
+ *   node server.mjs                  # http://127.0.0.1:8787
+ *   node server.mjs 9000             # 指定端口
+ *   node server.mjs --open           # 启动后自动打开浏览器
+ *   node server.mjs 8787 --open      # 组合使用
+ *   node server.mjs --stop           # 停掉正在运行的服务（读 data/server.json）
  *
  * 职责：
  *   · 静态托管 index.html / entries / assets
@@ -11,6 +14,7 @@
  *   · 图片上传（assets/YYYY/MM/）
  *   · 记账库、应用配置（data/*.json，原子写入）
  *   · Git 备份（status / commit / push），令牌只保存在 .git/config
+ *   · 进程管理（写 data/server.json，供启动器判重与关闭）
  *
  * 依赖：仅 Node 内置模块。
  */
@@ -18,17 +22,20 @@ import { createServer } from "node:http";
 import { readFile, writeFile, rename, stat, mkdir, readdir, unlink } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, exec } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+const ARGS = process.argv.slice(2);
+const FLAGS = new Set(ARGS.filter(a => a.startsWith("--")));
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = Number(process.argv[2] || process.env.PORT || 8787);
+const PORT = Number(ARGS.find(a => /^\d+$/.test(a)) || process.env.PORT || 8787);
 const ENTRIES_DIR = path.join(ROOT, "entries");
 const ASSETS_DIR = path.join(ROOT, "assets");
 const DATA_DIR = path.join(ROOT, "data");
 const INDEX_FILE = path.join(ENTRIES_DIR, "index.json");
 const LEDGER_FILE = path.join(DATA_DIR, "ledger.json");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+const RUNTIME_FILE = path.join(DATA_DIR, "server.json");
 
 /* ───────────────────────── helpers ───────────────────────── */
 
@@ -493,6 +500,62 @@ async function handleStatic(req, res, url) {
   });
 }
 
+/* ───────────────────────── 进程管理 ───────────────────────── */
+
+/** 打开默认浏览器（静默；Windows 用 rundll32，避免弹出多余窗口） */
+function openBrowser(url) {
+  try {
+    if (process.platform === "win32") spawn("rundll32", ["url.dll,FileProtocolHandler", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    else if (process.platform === "darwin") spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+    else spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+    return true;
+  } catch { return false; }
+}
+
+/** 读运行时信息（端口 / pid），供启动器判重 */
+async function readRuntime() {
+  try { return JSON.parse(await readFile(RUNTIME_FILE, "utf8")); } catch { return null; }
+}
+
+/** 这个端口上跑的到底是不是我们自己？防止误杀别人的服务 */
+async function isOurs(port) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return false;
+    const j = await res.json();
+    return j && j.ok === true && typeof j.root === "string" && path.resolve(j.root) === ROOT;
+  } catch { return false; }
+}
+
+/* --stop：停掉正在运行的服务 */
+if (FLAGS.has("--stop")) {
+  const rt = await readRuntime();
+  const port = rt?.port || PORT;
+  const alive = await isOurs(port);
+  if (!alive) {
+    console.log("没有正在运行的日记服务" + (rt ? `（记录里的端口 ${port} 无响应）` : ""));
+    await unlink(RUNTIME_FILE).catch(() => {});
+    process.exit(0);
+  }
+  let killed = false;
+  if (rt?.pid) {
+    try { process.kill(rt.pid); killed = true; }
+    catch { /* pid 失效，退回到端口查找 */ }
+  }
+  if (!killed && process.platform === "win32") {
+    await new Promise(res => {
+      exec(`netstat -ano | findstr LISTENING | findstr :${port}`, (err, out) => {
+        const pid = (String(out || "").trim().split(/\s+/).pop() || "").trim();
+        if (/^\d+$/.test(pid)) { try { process.kill(Number(pid)); killed = true; } catch { /* ignore */ } }
+        res();
+      });
+    });
+  }
+  await unlink(RUNTIME_FILE).catch(() => {});
+  console.log(killed ? `已停止日记服务（端口 ${port}）` : `无法停止端口 ${port} 上的进程，请手动结束`);
+  process.exit(killed ? 0 : 1);
+}
+
 /* ───────────────────────── boot ───────────────────────── */
 
 const server = createServer(async (req, res) => {
@@ -508,13 +571,44 @@ const server = createServer(async (req, res) => {
 
 await mkdir(DATA_DIR, { recursive: true });
 if (!(await readFile(CONFIG_FILE, "utf8").catch(() => null))) await writeConfig(DEFAULT_CONFIG);
+
+// 端口被占：如果占用的就是我们自己，就别再起一个，直接开浏览器走人
+server.on("error", async err => {
+  if (err.code === "EADDRINUSE") {
+    const url = `http://127.0.0.1:${PORT}/`;
+    if (await isOurs(PORT)) {
+      console.log(`日记服务已经在运行：${url}`);
+      if (FLAGS.has("--open")) openBrowser(url);
+      process.exit(0);
+    }
+    console.error(`端口 ${PORT} 被其他程序占用。换一个端口，例如：node _tools/server.mjs 8899`);
+    process.exit(1);
+  }
+  throw err;
+});
+
 await buildIndex();
 
-server.listen(PORT, "127.0.0.1", () => {
+server.listen(PORT, "127.0.0.1", async () => {
+  const url = `http://127.0.0.1:${PORT}/`;
+  await writeFile(RUNTIME_FILE, JSON.stringify({
+    pid: process.pid, port: PORT, url, root: ROOT, startedAt: new Date().toISOString()
+  }, null, 2) + "\n", "utf8").catch(() => {});
+
   console.log("日记 · 桑榆下 —— 本地服务");
   console.log("  目录: " + ROOT);
-  console.log("  地址: http://127.0.0.1:" + PORT + "/");
-  console.log("  停止: Ctrl + C");
+  console.log("  地址: " + url);
+  console.log("  停止: Ctrl + C  或  node _tools/server.mjs --stop");
+  if (FLAGS.has("--open")) openBrowser(url);
 });
+
+/** 退出时清掉运行时文件，避免启动器读到过期端口 */
+async function cleanup() {
+  const rt = await readRuntime();
+  if (rt && rt.pid === process.pid) await unlink(RUNTIME_FILE).catch(() => {});
+  process.exit(0);
+}
+process.on("SIGINT", cleanup);
+process.on("SIGTERM", cleanup);
 
 export { server, ROOT, buildIndex, readConfig, writeConfig, readLedger, writeLedger };

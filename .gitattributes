@@ -1,5 +1,21 @@
+# 默认统一用 LF，避免不同机器上产生纯换行差异的 diff
 * text=auto eol=lf
+
+# 但 Windows 批处理必须是 CRLF，且保持纯 ASCII：
+# cmd.exe 用系统 ANSI 代码页逐行读取 .cmd，LF-only 或非 ASCII 字节
+# 都会让它的解析器错位，整段脚本失效。这条规则不能删。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# VBS 同样是逐行按 ANSI 读，行尾统一 CRLF
+*.vbs text eol=crlf
+
+# 二进制资源不做换行转换
 *.png binary
 *.jpg binary
+*.jpeg binary
 *.webp binary
 *.gif binary
+*.avif binary
+*.ico binary
+*.woff2 binary
