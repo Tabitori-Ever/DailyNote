@@ -117,6 +117,105 @@ function scalar(v) {
   return /^[\[\]{},:#&*!|>'"%@`]|:\s|\s$|^$/.test(s) ? JSON.stringify(s) : s;
 }
 
+/* ── 金额算式 ──────────────────────────────────────────────────────────
+   收入 / 支出可以写成算式，例如 5+10.6+11.6+6.9。原样存进 front matter，
+   统计时按算出来的结果计。用自己的解析器而不是 eval —— 这些字符串来自
+   输入框或文件，不该有执行能力。                                        */
+function amountOf(v) {
+  if (v == null || v === "") return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const s = String(v).trim();
+  if (s === "") return 0;
+  if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s)) return Number(s);
+
+  const expr = s
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[＋－＊／（）．]/g, c => ({ "＋": "+", "－": "-", "＊": "*", "／": "/", "（": "(", "）": ")", "．": "." }[c]))
+    .replace(/[，,￥¥$\s]/g, "")
+    .replace(/[×✕]/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/[—–−]/g, "-");
+
+  let i = 0;
+  const peek = () => expr[i];
+  function parseExpr() {
+    let v = parseTerm();
+    for (;;) {
+      const c = peek();
+      if (c === "+") { i++; v += parseTerm(); }
+      else if (c === "-") { i++; v -= parseTerm(); }
+      else return v;
+    }
+  }
+  function parseTerm() {
+    let v = parseFactor();
+    for (;;) {
+      const c = peek();
+      if (c === "*") { i++; v *= parseFactor(); }
+      else if (c === "/") {
+        i++;
+        const d = parseFactor();
+        if (d === 0) throw new Error("divide by zero");
+        v /= d;
+      } else if (c === "(" || c === "." || (c >= "0" && c <= "9")) {
+        v *= parseFactor();
+      } else return v;
+    }
+  }
+  function parseFactor() {
+    const c = peek();
+    if (c === "-") { i++; return -parseFactor(); }
+    if (c === "+") { i++; return parseFactor(); }
+    return parsePower();
+  }
+  function parsePower() {
+    const base = parsePrimary();
+    if (peek() === "^") { i++; return Math.pow(base, parseFactor()); }
+    return base;
+  }
+  function parsePrimary() {
+    if (peek() === "(") {
+      i++;
+      const v = parseExpr();
+      if (peek() !== ")") throw new Error("unbalanced parenthesis");
+      i++;
+      return v;
+    }
+    const m = /^\d*\.?\d+/.exec(expr.slice(i));
+    if (!m) throw new Error("unexpected char");
+    i += m[0].length;
+    return Number(m[0]);
+  }
+
+  try {
+    const v = parseExpr();
+    if (i !== expr.length) return 0;
+    return Number.isFinite(v) ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 这个值是不是算式（决定要不要在账本里留着原文） */
+const looksLikeFormula = v => typeof v === "string" && /[+\-*/^()（）]/.test(v.trim().replace(/^[+-]/, ""));
+
+/**
+ * 该不该把原文原样留着？
+ * 是算式要留（用户要看到 5+10.6+11.6 而不是 27.2），
+ * 既不是数字也不是算式（例如误输的 abc）也要留 —— 否则用户写的东西
+ * 会被静默改成 0，事后根本看不出原本填了什么。
+ */
+function shouldKeepRaw(v) {
+  if (typeof v !== "string") return false;
+  const s = v.trim();
+  if (!s) return false;
+  if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s)) return false;   // 就是个普通数字
+  return true;
+}
+
+/** 日期里的金额字段 → 对应的「原式」字段 */
+const MONEY_KEYS = { income: "incomeExpr", expense: "expenseExpr" };
+
 function buildFrontMatter(meta) {
   const order = ["title", "date", "created", "updated", "tags", "mood", "anniversary", "income", "expense"];
   const keys = [...new Set([...order.filter(k => meta[k] !== undefined && meta[k] !== "" && !(Array.isArray(meta[k]) && !meta[k].length)),
@@ -155,6 +254,14 @@ async function readEntry(date) {
   catch { return null; }
   const st = await stat(file);
   const { meta, body } = parseFrontMatter(raw);
+  // 金额可能是算式（或误输的非数字）：数值部分单独给出来，原文也一并留着
+  for (const [key, exprKey] of Object.entries(MONEY_KEYS)) {
+    const raw = meta[key];
+    if (raw !== undefined) {
+      meta[key] = amountOf(raw);
+      if (shouldKeepRaw(raw)) meta[exprKey] = String(raw).trim();
+    }
+  }
   const rel = path.relative(ROOT, file).split(path.sep).join("/");
   return {
     date,
@@ -164,6 +271,8 @@ async function readEntry(date) {
     anniversary: meta.anniversary ? String(meta.anniversary) : "",
     income: Number(meta.income || 0) || 0,
     expense: Number(meta.expense || 0) || 0,
+    incomeExpr: meta.incomeExpr || "",
+    expenseExpr: meta.expenseExpr || "",
     created: meta.created ? String(meta.created) : st.birthtime.toISOString(),
     updated: meta.updated ? String(meta.updated) : st.mtime.toISOString(),
     mtime: st.mtime.toISOString(),
@@ -178,21 +287,42 @@ async function readEntry(date) {
 
 async function writeEntry(date, meta, body, { creating = false } = {}) {
   const file = entryPath(date);
+  const prev = await readEntry(date).catch(() => null);
   let created = meta.created;
-  if (creating || !created) {
-    const prev = await readEntry(date).catch(() => null);
-    created = (prev && prev.created) || new Date().toISOString();
-  }
+  if (creating || !created) created = (prev && prev.created) || new Date().toISOString();
+
+  const tags = Array.isArray(meta.tags)
+    ? meta.tags.filter(Boolean)
+    : (meta.tags ? String(meta.tags).split(",").map(s => s.trim()).filter(Boolean) : []);
+
+  // 金额允许写算式：原样保存（字符串会被 YAML 引号包住），
+  // 统计时用 amountOf() 解析，所以手改文件写算式也一样有效
+  const keepRaw = v => (shouldKeepRaw(v) ? String(v).trim() : null);
+
+  // 金额：只认「本次请求带来的值」，不做跨次沿用。
+  // 沿用规则看着安全，实际会串味 —— 新建一篇只填支出时，
+  // 会从上一篇日记继承 income / incomeExpr。编辑器每次都带全字段，
+  // 所以两种状态就够了：
+  //   exprKey 有值   → 用这个原式
+  //   exprKey 缺席/空 → 看 income 本身是不是算式，否则按数值存
+  const keepAmount = (key, exprKey) => {
+    const explicit = meta[exprKey];
+    if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+    if (shouldKeepRaw(meta[key])) return String(meta[key]).trim();
+    return null;
+  };
+
   const full = {
-    title: meta.title !== undefined ? meta.title : (await readEntry(date).catch(() => null))?.title || "",
+    title: meta.title !== undefined ? meta.title : (prev?.title || ""),
     date,
     created,
     updated: new Date().toISOString(),
-    tags: Array.isArray(meta.tags) ? meta.tags : (meta.tags ? String(meta.tags).split(",").map(s => s.trim()).filter(Boolean) : []),
+    tags,
     mood: meta.mood || "",
     anniversary: meta.anniversary || "",
-    income: Number(meta.income || 0) || 0,
-    expense: Number(meta.expense || 0) || 0
+    income: keepAmount("income", "incomeExpr") ?? (Number(amountOf(meta.income)) || 0),
+    expense: keepAmount("expense", "expenseExpr") ?? (Number(amountOf(meta.expense)) || 0),
+    incomeExpr: "", expenseExpr: ""     // 只用于内部传递，不落盘
   };
   const text = buildFrontMatter(full) + String(body || "").replace(/\r\n?/g, "\n").replace(/\s+$/, "") + "\n";
   await atomicWrite(file, text);
@@ -302,8 +432,13 @@ async function syncLedgerFromEntry(entry) {
   const ledger = await readLedger();
   const id = "entry:" + entry.date;
   const idx = ledger.records.findIndex(r => r.id === id);
-  const income = Number(entry.income) || 0;
-  const expense = Number(entry.expense) || 0;
+  // entry 里的 income / expense 已经由 readEntry 解析成数字，
+  // 这里再兜一次，免得调用方传入未解析的原始值
+  const income = Number(amountOf(entry.income)) || 0;
+  const expense = Number(amountOf(entry.expense)) || 0;
+  // 日记里写的是算式（或误输的内容）就保留原文，账本表格能显示「5+10.6 = 15.60」
+  const incomeExpr = entry.incomeExpr || (shouldKeepRaw(entry.income) ? String(entry.income).trim() : "");
+  const expenseExpr = entry.expenseExpr || (shouldKeepRaw(entry.expense) ? String(entry.expense).trim() : "");
 
   if (!income && !expense) {
     // 清零 / 本来就没记账，且账本里也没有这条：不必写文件
@@ -313,14 +448,15 @@ async function syncLedgerFromEntry(entry) {
   } else {
     const rec = {
       id, date: entry.date, kind: "diary",
-      income, expense,
+      income, expense, incomeExpr, expenseExpr,
       note: entry.title || entry.date,
       updated: new Date().toISOString()
     };
     if (idx >= 0) {
       const old = ledger.records[idx];
-      // 金额没变就不动，避免只因为 note 或时间戳变化而重写账本
-      if (old.income === income && old.expense === expense && old.note === rec.note) return;
+      // 金额与算式都没变就不动，避免只因为 note 或时间戳变化而重写账本
+      if (old.income === income && old.expense === expense && old.note === rec.note &&
+          (old.incomeExpr || "") === incomeExpr && (old.expenseExpr || "") === expenseExpr) return;
       ledger.records[idx] = rec;
     } else {
       ledger.records.push(rec);
@@ -469,16 +605,25 @@ async function handleApi(req, res, url) {
       const body = await readJsonBody(req);
       const records = Array.isArray(body.records) ? body.records : null;
       if (!records) return sendJson(res, 400, { error: "需要 records 数组" });
-      const clean = records.map(r => ({
-        id: String(r.id || (r.date + ":" + sha1(JSON.stringify(r)))),
-        date: isDate(r.date) ? r.date : todayStr(),
-        kind: r.kind === "diary" ? "diary" : "manual",
-        income: Number(r.income) || 0,
-        expense: Number(r.expense) || 0,
-        category: String(r.category || ""),
-        note: String(r.note || ""),
-        updated: new Date().toISOString()
-      })).sort((a, b) => (a.date < b.date ? 1 : -1));
+      const clean = records.map(r => {
+        // 金额允许是算式（前端可以写 5+10.6+11.6）：
+        // 算得出数也把原文留着，表格显示「5+10.6 = 15.60」；
+        // 算不出的（例如误输 abc）同样留原文，绝不静默改成 0
+        const keepOrNumber = (v) => {
+          if (shouldKeepRaw(v)) return String(v).trim();
+          return amountOf(v);
+        };
+        return {
+          id: String(r.id || (r.date + ":" + sha1(JSON.stringify(r)))),
+          date: isDate(r.date) ? r.date : todayStr(),
+          kind: r.kind === "diary" ? "diary" : "manual",
+          income: keepOrNumber(r.income),
+          expense: keepOrNumber(r.expense),
+          category: String(r.category || ""),
+          note: String(r.note || ""),
+          updated: new Date().toISOString()
+        };
+      }).sort((a, b) => (a.date < b.date ? 1 : -1));
       const prev = await readLedger();
       const changed = JSON.stringify(prev.records) !== JSON.stringify(clean);
       await writeLedger({ version: 1, records: clean }, changed);

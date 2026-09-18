@@ -480,6 +480,13 @@ a:hover { border-bottom-color: var(--accent); }
 .led__table .num { font-family: var(--mono); text-align: right; white-space: nowrap; }
 .led__table .in { color: var(--accent); }
 .led__table .ex { color: var(--ink-2); }
+/* 账目金额若来自算式，就显示「算式 = 结果」，算式用弱一级的灰 */
+.led__table .expr {
+  font-size: 11.5px;
+  color: var(--ink-4);
+  margin-right: 5px;
+  word-break: break-all;
+}
 .tagpill {
   display: inline-block; padding: 1px 6px;
   border: 1px solid var(--line-2); border-radius: var(--r);
@@ -504,7 +511,21 @@ a:hover { border-bottom-color: var(--accent); }
   outline: none; border-color: var(--accent); background: var(--paper-3);
 }
 .inp::placeholder, .area::placeholder { color: var(--ink-4); }
-.inp--num { font-family: var(--mono); text-align: right; width: 110px; }
+.inp--num { font-family: var(--mono); text-align: right; width: 120px; }
+/* 算式输入：下方实时显示算出来的值 */
+.calc {
+  display: block;
+  min-height: 15px;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-4);
+  text-align: right;
+  line-height: 1.3;
+}
+.calc.ok { color: var(--accent); }
+.calc.bad { color: #a4463c; }
+html[data-dark] .calc.bad { color: #d98b7f; }
 .area { width: 100%; resize: vertical; line-height: 1.85; }
 .sel { appearance: none; padding-right: 26px; background-image: none; }
 
@@ -825,9 +846,21 @@ html[data-dark] .modal__scrim { background: rgba(0, 0, 0, 0.6); }
     <div class="led__form">
       <div class="f"><span class="lbl">日期</span><input class="inp" type="date" id="ledDate"></div>
       <div class="f"><span class="lbl">备注</span><input class="inp" id="ledNote" placeholder="例如：午饭" style="width:190px"></div>
-      <div class="f"><span class="lbl">收入</span><input class="inp inp--num" id="ledIn" type="number" step="0.01" value="0"></div>
-      <div class="f"><span class="lbl">支出</span><input class="inp inp--num" id="ledEx" type="number" step="0.01" value="0"></div>
+      <div class="f">
+        <span class="lbl">收入</span>
+        <input class="inp inp--num" id="ledIn" inputmode="text" autocomplete="off" placeholder="0 或 5+10.6">
+        <span class="calc" id="ledInCalc"></span>
+      </div>
+      <div class="f">
+        <span class="lbl">支出</span>
+        <input class="inp inp--num" id="ledEx" inputmode="text" autocomplete="off" placeholder="0 或 5+10.6">
+        <span class="calc" id="ledExCalc"></span>
+      </div>
       <button class="btn btn--solid" id="ledAdd">记一笔</button>
+      <span class="lbl" style="flex-basis:100%;line-height:1.9">
+        金额可直接写算式，例如 <code class="mono">5+10.6+11.6+6.9</code>，支持 + - * / ^ 与括号；
+        原样保存在账目里，统计按算出来的结果算。
+      </span>
     </div>
   </main>
 
@@ -981,11 +1014,15 @@ html[data-dark] .modal__scrim { background: rgba(0, 0, 0, 0.6); }
           <div class="ed__field">
             <span class="lbl">当日收支</span>
             <div class="insert-form">
-              <input class="inp inp--num" id="edIn" type="number" step="0.01" value="0" title="收入" style="width:100%;">
+              <input class="inp inp--num" id="edIn" inputmode="text" autocomplete="off"
+                     placeholder="收入，可写 5+10.6" title="收入" style="width:100%;">
             </div>
-            <div class="insert-form">
-              <input class="inp inp--num" id="edEx" type="number" step="0.01" value="0" title="支出" style="width:100%;">
+            <span class="calc" id="edInCalc"></span>
+            <div class="insert-form" style="margin-top:6px">
+              <input class="inp inp--num" id="edEx" inputmode="text" autocomplete="off"
+                     placeholder="支出，可写 5+10.6" title="支出" style="width:100%;">
             </div>
+            <span class="calc" id="edExCalc"></span>
             <span class="lbl" id="edMoneyHint">默认 0，不计入账本</span>
           </div>
           <div class="ed__field">
@@ -1055,6 +1092,160 @@ const TODAY = ymd(new Date());
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = n => (Math.round(Number(n) * 100) / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const weekdayOf = s => WEEK[parseYmd(s).getDay()];
+
+/* ── 金额输入：支持算式，例如 5+10.6+11.6+6.9 ──────────────────────────
+   手写的递归下降解析器，不用 eval —— 输入框里的字符串不该有执行能力。
+   支持 + - * / ^、括号、一元负号，以及中文输入法常见的全角字符。
+   解析失败返回 NaN，调用方据此给出提示而不是静默当成 0。            */
+function parseAmount(input) {
+  let s = String(input == null ? "" : input).trim();
+  if (!s) return 0;
+
+  // 全角 → 半角（中文输入法下很容易打出 ＋ 或 ．
+  s = s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+       .replace(/[＋－＊／（）．]/g, c => ({ "＋": "+", "－": "-", "＊": "*", "／": "/", "（": "(", "）": ")", "．": "." }[c]))
+       .replace(/[，,]/g, "")
+       .replace(/[×✕]/g, "*")
+       .replace(/[÷]/g, "/")
+       .replace(/[—–−]/g, "-")
+       .replace(/[￥¥$]/g, "")
+       .replace(/\s+/g, "");
+
+  // 只有一个数就直接返回，避免无谓的解析
+  if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s)) return Number(s);
+
+  let p = 0;
+  const peek = () => s[p];
+  const skipWs = () => { while (s[p] === " ") p++; };
+
+  function parseExpr() {
+    let v = parseTerm();
+    for (;;) {
+      skipWs();
+      const c = peek();
+      if (c === "+") { p++; v += parseTerm(); }
+      else if (c === "-") { p++; v -= parseTerm(); }
+      else return v;
+    }
+  }
+  function parseTerm() {
+    let v = parseFactor();
+    for (;;) {
+      skipWs();
+      const c = peek();
+      if (c === "*") { p++; v *= parseFactor(); }
+      else if (c === "/") {
+        p++;
+        const d = parseFactor();
+        if (d === 0) throw new Error("除以零");
+        v /= d;
+      }
+      else if (c === "(" || c === "." || (c >= "0" && c <= "9")) {
+        v *= parseFactor();                 // 隐式乘法：3(2+1)、2.5.3 这类误输也当乘法
+      }
+      else return v;
+    }
+  }
+  function parseFactor() {
+    skipWs();
+    const c = peek();
+    if (c === "-") { p++; return -parseFactor(); }
+    if (c === "+") { p++; return parseFactor(); }
+    return parsePower();
+  }
+  function parsePower() {
+    const base = parsePrimary();
+    skipWs();
+    if (peek() === "^") { p++; return Math.pow(base, parseFactor()); }
+    return base;
+  }
+  function parsePrimary() {
+    skipWs();
+    if (peek() === "(") {
+      p++;
+      const v = parseExpr();
+      skipWs();
+      if (peek() !== ")") throw new Error("括号不匹配");
+      p++;
+      return v;
+    }
+    const m = /^\d*\.?\d+/.exec(s.slice(p));
+    if (!m) throw new Error("看不懂的符号：" + (peek() || "（结尾）"));
+    p += m[0].length;
+    return Number(m[0]);
+  }
+
+  try {
+    const v = parseExpr();
+    skipWs();
+    if (p !== s.length) throw new Error("多余的字符：" + s.slice(p));
+    return Number.isFinite(v) ? v : NaN;
+  } catch {
+    return NaN;
+  }
+}
+
+/** 输入里看起来像算式吗？（决定要不要显示“= 值”提示） */
+function isFormula(v) {
+  const s = String(v == null ? "" : v).replace(/^[+-]/, "");
+  return /[+\-*/^()（）]/.test(s);
+}
+
+/** 账目里存的金额字段：老数据是数字，新数据可能是一段算式 */
+function money(v) {
+  if (v == null || v === "") return 0;
+  return typeof v === "number" ? v : parseAmount(v);
+}
+
+/** 表格右侧显示的金额：算式就把原文一起带出来 */
+function amountCell(v, cls) {
+  if (v == null || v === "") return "";
+  const n = money(v);
+  if (typeof v === "string" && isFormula(v)) {
+    return `<span class="expr">${esc(v)}</span> = <span class="${cls}">${num(n)}</span>`;
+  }
+  return `<span class="${cls}">${num(n)}</span>`;
+}
+
+/**
+ * 把「收入 / 支出」输入框的值显示成实时结果。
+ * 输入是算式时给出 = 值；算式不合法时明确报错，而不是静默当成 0。
+ */
+function refreshCalc(inputSel, outSel, { withSum = false } = {}) {
+  const input = $(inputSel);
+  const out = $(outSel);
+  if (!input || !out) return null;
+  const raw = input.value.trim();
+  const n = parseAmount(raw);
+  out.classList.remove("ok", "bad");
+
+  if (!raw || n === 0) {
+    out.textContent = "";
+    return { raw: "", value: 0, ok: true, empty: true };
+  }
+  if (Number.isNaN(n)) {
+    out.textContent = "算式无法解析";
+    out.classList.add("bad");
+    return { raw, value: NaN, ok: false };
+  }
+  out.textContent = isFormula(raw) ? "= " + num(n) : "";
+  if (isFormula(raw)) out.classList.add("ok");
+  return { raw, value: n, ok: true };
+}
+
+/**
+ * 写入存储的金额。
+ * 用户写的是算式就原样发出去 —— 后端负责解析并存下原文，
+ * 这样文件里留的是「5+10.6+11.6+6.9」而不是冷冰冰的 34.1。
+ * 既不是数字也不是算式的输入也原样发，让后端保留下来，
+ * 免得把写错的内容静默变成 0。
+ */
+function amountToStore(raw) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (!s) return 0;
+  if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s)) return Number(s);   // 普通数字
+  return s;                                                    // 算式或存疑输入：留着原文
+}
 
 function toast(msg, ms = 2200) {
   const host = $("#toastHost");
@@ -1470,14 +1661,15 @@ function renderLedger() {
   const rows = (S.ledger.records || []).filter(r => String(r.date).startsWith(prefix))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  const sumIn = rows.reduce((a, r) => a + (Number(r.income) || 0), 0);
-  const sumEx = rows.reduce((a, r) => a + (Number(r.expense) || 0), 0);
+  // 金额可能是数字，也可能是一段算式（字符串），统一用 money() 取值
+  const sumIn = rows.reduce((a, r) => a + money(r.income), 0);
+  const sumEx = rows.reduce((a, r) => a + money(r.expense), 0);
   $("#sumIn").textContent = num(sumIn);
   $("#sumEx").textContent = num(sumEx);
   $("#sumBal").textContent = num(sumIn - sumEx);
 
-  const allIn = (S.ledger.records || []).reduce((a, r) => a + (Number(r.income) || 0), 0);
-  const allEx = (S.ledger.records || []).reduce((a, r) => a + (Number(r.expense) || 0), 0);
+  const allIn = (S.ledger.records || []).reduce((a, r) => a + money(r.income), 0);
+  const allEx = (S.ledger.records || []).reduce((a, r) => a + money(r.expense), 0);
   $("#ledAllTime").textContent = `累计 收 ${num(allIn)} · 支 ${num(allEx)} · 余 ${num(allIn - allEx)}`;
 
   if (!rows.length) {
@@ -1489,8 +1681,8 @@ function renderLedger() {
       <td class="mono">${esc(r.date)}</td>
       <td>${esc(r.note || "")}${r.category ? ` <span class="tagpill">${esc(r.category)}</span>` : ""}</td>
       <td><span class="tagpill">${r.kind === "diary" ? "日记同步" : "手动"}</span></td>
-      <td class="num in">${r.income ? num(r.income) : ""}</td>
-      <td class="num ex">${r.expense ? num(r.expense) : ""}</td>
+      <td class="num">${amountCell(r.income, "in")}</td>
+      <td class="num">${amountCell(r.expense, "ex")}</td>
       <td class="num"><button class="btn btn--flat btn--icon" data-leddel="${esc(r.id)}" title="删除" style="width:24px;height:24px">
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg>
       </button></td>
@@ -1700,8 +1892,11 @@ const Ed = {
     $("#edTitle").value = e ? e.title || "" : "";
     $("#edBody").value = e ? e.body || "" : "";
     $("#edAnniv").value = e ? e.anniversary || "" : "";
-    $("#edIn").value = e ? (e.income || 0) : 0;
-    $("#edEx").value = e ? (e.expense || 0) : 0;
+    // 金额回填：优先用原式（incomeExpr），这样看到的是「300+45.5+8」
+    // 而不是被算好的 353.5；老数据没有原式就退回数值
+    const moneyVal = (num, expr) => (expr ? String(expr) : (num ? String(num) : ""));
+    $("#edIn").value = e ? moneyVal(e.income, e.incomeExpr) : "";
+    $("#edEx").value = e ? moneyVal(e.expense, e.expenseExpr) : "";
     $("#edDelete").hidden = this.isNew;
     this.renderTags(); this.renderMoods(); this.renderTemplates(); this.updateHint();
 
@@ -1739,8 +1934,18 @@ const Ed = {
       ? "保存后自动记录创建时间"
       : `创建 ${fmtTime(this.created)} · 上次修改 ${fmtTime(this.updated)}`;
     $("#edTimes").textContent = t;
-    const inc = Number($("#edIn").value) || 0, exp = Number($("#edEx").value) || 0;
-    $("#edMoneyHint").textContent = (inc || exp) ? `将写入账本：收 ${num(inc)} · 支 ${num(exp)}` : "默认 0，不计入账本";
+
+    // 收支同样是算式输入：边打边显示结果，算式原样留在文件里
+    const cin = refreshCalc("#edIn", "#edInCalc");
+    const cex = refreshCalc("#edEx", "#edExCalc");
+    if (!cin.ok || !cex.ok) {
+      $("#edMoneyHint").textContent = "算式无法解析，请检查";
+      return;
+    }
+    const inc = cin.value || 0, exp = cex.value || 0;
+    $("#edMoneyHint").textContent = (inc || exp)
+      ? `将写入账本：收 ${num(inc)} · 支 ${num(exp)}`
+      : "默认 0，不计入账本";
   },
 
   /** 在光标处包裹 / 插入 */
@@ -1775,14 +1980,22 @@ const Ed = {
   async save() {
     const date = $("#edDate").value || this.date;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast("日期不合法"); return; }
+    const cin = refreshCalc("#edIn", "#edInCalc");
+    const cex = refreshCalc("#edEx", "#edExCalc");
+    if (!cin.ok || !cex.ok) { toast("收支算式无法解析，请检查"); return; }
     const payload = {
       title: $("#edTitle").value.trim(),
       tags: this.tags,
       mood: this.mood,
       anniversary: $("#edAnniv").value.trim(),
       body: $("#edBody").value,
-      income: Number($("#edIn").value) || 0,
-      expense: Number($("#edEx").value) || 0,
+      income: amountToStore(cin.raw),
+      expense: amountToStore(cex.raw),
+      // 总是把原式字段带上：空串表示「用户把它清掉了」，
+      // 服务端据此删除旧算式；若完全不传，服务端会当作「本次不改动金额」
+      // 而沿用文件里已有的算式（那样清空就失效了）
+      incomeExpr: cin.raw,
+      expenseExpr: cex.raw,
       checksum: this.isNew ? null : this.checksum
     };
     try {
@@ -2097,7 +2310,8 @@ function bind() {
     $("#pvBody").innerHTML = md.render($("#edBody").value);
     Modal.open("mPreview");
   };
-  ["#edIn", "#edEx"].forEach(s => $(s).addEventListener("input", () => Ed.updateHint()));
+  $("#edIn").addEventListener("input", () => Ed.updateHint());
+  $("#edEx").addEventListener("input", () => Ed.updateHint());
 
   /* 日期检索导航 */
   const pkShift = n => {
@@ -2118,22 +2332,38 @@ function bind() {
   $("#ledPrev").onclick = () => { if (--S.ledM < 1) { S.ledM = 12; S.ledY--; } renderLedger(); };
   $("#ledNext").onclick = () => { if (++S.ledM > 12) { S.ledM = 1; S.ledY++; } renderLedger(); };
   $("#ledThisMonth").onclick = () => { const d = new Date(); S.ledY = d.getFullYear(); S.ledM = d.getMonth() + 1; renderLedger(); };
+
+  // 金额框可以写算式，边打边显示算出来的结果
+  const ledCalc = () => ({
+    in: refreshCalc("#ledIn", "#ledInCalc"),
+    ex: refreshCalc("#ledEx", "#ledExCalc")
+  });
+  $("#ledIn").addEventListener("input", ledCalc);
+  $("#ledEx").addEventListener("input", ledCalc);
+
   $("#ledAdd").onclick = async () => {
     const date = $("#ledDate").value || TODAY;
-    const income = Number($("#ledIn").value) || 0;
-    const expense = Number($("#ledEx").value) || 0;
-    if (!income && !expense) { toast("收入和支出不能都为 0"); return; }
+    const c = ledCalc();
+    if (!c.in.ok || !c.ex.ok) { toast("算式无法解析，请检查金额输入"); return; }
+    if (!c.in.value && !c.ex.value) { toast("收入和支出不能都为 0"); return; }
+
     S.ledger.records.unshift({
       id: "manual:" + Date.now().toString(36),
-      date, kind: "manual", income, expense,
+      date, kind: "manual",
+      income: c.in.raw,
+      expense: c.ex.raw,
       note: $("#ledNote").value.trim(), category: ""
     });
     await API.saveLedger({ records: S.ledger.records });
     S.ledger = await API.ledger();
-    $("#ledNote").value = ""; $("#ledIn").value = 0; $("#ledEx").value = 0;
+    $("#ledNote").value = ""; $("#ledIn").value = ""; $("#ledEx").value = "";
+    ledCalc();
     renderLedger();
     toast("已记一笔");
   };
+  $("#ledNote").addEventListener("keydown", ev => {
+    if (ev.key === "Enter") { ev.preventDefault(); $("#ledAdd").click(); }
+  });
 
   /* 设置 */
   const saveReader = async () => {

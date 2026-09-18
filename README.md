@@ -76,9 +76,11 @@ python _tools\make-icon.py     # 需要 Pillow
 
 ```powershell
 node _tools/test-api.mjs          # 服务端接口回归（35 项）
+node _tools/test-expr.mjs         # 记账算式回归（47 项）
 node _tools/test-lifecycle.mjs    # 服务生命周期：心跳 / 超时退出 / 退出接口（15 项，约 2 分钟）
 node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-ui.mjs"   # 界面回归（57 项）
 node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-quit.mjs" # 心跳与退出按钮（17 项）
+node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-expr-ui.mjs" # 记账算式界面（27 项）
 ```
 
 ---
@@ -150,7 +152,19 @@ node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-quit
 默认在顶栏隐藏，设置里打开后才出现。写日记时可以直接填当日收支，保存后自动同步进账本
 （清零则自动移除该条）。记账页按月汇总收入/支出/结余，也可手动记一笔。
 
+**金额可以直接写算式**，例如 `5+10.6+11.6+6.9`：
+
+- 输入时下方实时显示 `= 34.10`；算式不合法（如 `5+`）会明确报错为「算式无法解析」，
+  而不是悄悄当成 0
+- **原式原样保存在文件里**，`expense: 5+10.6+11.6+6.9`；同时按算出来的结果参与统计
+- 账本表格显示成 `5+10.6+11.6+6.9 = 34.10`，两边都看得到
+- 重新打开编辑器时回填的是**原式**而不是算好的数
+- 支持 `+ - * / ^` 与括号；中文输入法下的全角字符（`＋ ＊ （） ．`）、
+  千分位逗号、`×` `÷` 都会自动转换
+- 解析用的是自己写的递归下降解析器，**不用 `eval`** —— 输入框里的字符串不该有执行能力
+
 账本存在 `data/ledger.json`，与日记的 Markdown 分离，互不干扰。
+手改 Markdown 里的金额写成算式同样有效，服务端读的时候会解析。
 
 ### 版本与备份
 
