@@ -271,7 +271,14 @@ async function readLedger() {
   try { return { ...EMPTY_LEDGER, ...JSON.parse(await readFile(LEDGER_FILE, "utf8")) }; }
   catch { return { ...EMPTY_LEDGER, records: [] }; }
 }
-const writeLedger = l => { l.updatedAt = new Date().toISOString(); return atomicWrite(LEDGER_FILE, JSON.stringify(l, null, 2) + "\n"); };
+/**
+ * 写账本。changed=false 时保留原 updatedAt —— 否则每跑一次写操作都会
+ * 产生一个只有时间戳变化的 diff，把 Git 历史弄得全是噪音。
+ */
+const writeLedger = (l, changed = true) => {
+  l.updatedAt = changed ? new Date().toISOString() : (l.updatedAt || null);
+  return atomicWrite(LEDGER_FILE, JSON.stringify(l, null, 2) + "\n");
+};
 
 /** 日记里的收支同步进记账库：每篇日记一条记录，反复保存只更新不重复 */
 async function syncLedgerFromEntry(entry) {
@@ -279,17 +286,29 @@ async function syncLedgerFromEntry(entry) {
   const ledger = await readLedger();
   const id = "entry:" + entry.date;
   const idx = ledger.records.findIndex(r => r.id === id);
-  if (!entry.income && !entry.expense) {
-    if (idx >= 0) ledger.records.splice(idx, 1);        // 清零则移除
+  const income = Number(entry.income) || 0;
+  const expense = Number(entry.expense) || 0;
+
+  if (!income && !expense) {
+    // 清零 / 本来就没记账，且账本里也没有这条：不必写文件
+    //（否则每次保存日记都会刷新 updatedAt，产生无意义的改动）
+    if (idx < 0) return;
+    ledger.records.splice(idx, 1);
   } else {
     const rec = {
       id, date: entry.date, kind: "diary",
-      income: Number(entry.income) || 0,
-      expense: Number(entry.expense) || 0,
+      income, expense,
       note: entry.title || entry.date,
       updated: new Date().toISOString()
     };
-    if (idx >= 0) ledger.records[idx] = rec; else ledger.records.push(rec);
+    if (idx >= 0) {
+      const old = ledger.records[idx];
+      // 金额没变就不动，避免只因为 note 或时间戳变化而重写账本
+      if (old.income === income && old.expense === expense && old.note === rec.note) return;
+      ledger.records[idx] = rec;
+    } else {
+      ledger.records.push(rec);
+    }
   }
   ledger.records.sort((a, b) => (a.date < b.date ? 1 : -1));
   await writeLedger(ledger);
@@ -423,7 +442,9 @@ async function handleApi(req, res, url) {
         note: String(r.note || ""),
         updated: new Date().toISOString()
       })).sort((a, b) => (a.date < b.date ? 1 : -1));
-      await writeLedger({ version: 1, records: clean });
+      const prev = await readLedger();
+      const changed = JSON.stringify(prev.records) !== JSON.stringify(clean);
+      await writeLedger({ version: 1, records: clean }, changed);
       return sendJson(res, 200, { ok: true, count: clean.length });
     }
     return sendJson(res, 405, { error: "不支持的方法" });
