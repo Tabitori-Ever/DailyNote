@@ -357,7 +357,28 @@ async function handleApi(req, res, url) {
 
   /* ---- health ---- */
   if (seg[0] === "health") {
-    return sendJson(res, 200, { ok: true, root: ROOT, node: process.version, git: await isGitRepo() });
+    return sendJson(res, 200, {
+      ok: true, root: ROOT, node: process.version, git: await isGitRepo(),
+      idleMinutes: IDLE_MIN, everConnected, pid: process.pid
+    });
+  }
+
+  /* ---- 生命周期：心跳 / 页面关闭 / 主动退出 ---- */
+  if (seg[0] === "heartbeat" && method === "POST") {
+    lastSeen = Date.now();
+    everConnected = true;
+    return sendJson(res, 200, { ok: true, idleMinutes: IDLE_MIN });
+  }
+  if (seg[0] === "pagehide" && method === "POST") {
+    // 页面关闭 beacon：只记录时间，真正的退出交给宽限期判断
+    lastSeen = Date.now();
+    return sendJson(res, 200, { ok: true });
+  }
+  if (seg[0] === "quit" && method === "POST") {
+    const body = await readJsonBody(req).catch(() => ({}));
+    sendJson(res, 200, { ok: true, message: "服务正在退出，可以关闭这个页面了" });
+    setTimeout(() => shutdown(body?.reason || "页面上的退出按钮"), 120);
+    return;
   }
 
   /* ---- entries ---- */
@@ -523,6 +544,42 @@ async function handleStatic(req, res, url) {
 
 /* ───────────────────────── 进程管理 ───────────────────────── */
 
+/**
+ * 服务生命周期
+ *
+ * 网页每 HEARTBEAT_MS 往 /api/heartbeat 打一次点，关闭时向 /api/pagehide
+ * 发一个 beacon。若 --idle=<分钟> 打开（桌面启动器就是这么起的），
+ * 在「无人连接」超过该时长后自动退出 —— 于是关掉浏览器就等于关掉服务。
+ *
+ * 宽限期不是 0 的原因：刷新页面、跨标签跳转、手机息屏都会短暂没有心跳，
+ * 留一段时间可以避免误杀。宽限期内重新打开页面会续上，不会重启服务。
+ */
+const IDLE_MIN = (() => {
+  const m = ARGS.find(a => a.startsWith("--idle="));
+  if (m) return Math.max(0, Number(m.split("=")[1]) || 0);
+  return FLAGS.has("--idle") ? 3 : 0;          // --idle 不带值默认 3 分钟；0 = 不自动退出
+})();
+const HEARTBEAT_MS = 15000;
+const CHECK_MS = 5000;
+
+let lastSeen = Date.now();                     // 最后一次收到心跳 / 页面关闭通知
+let everConnected = false;                     // 是否曾经有页面连上过
+let shuttingDown = false;
+const startTs = Date.now();                    // 进程启动时刻
+
+async function cleanupRuntime() {
+  const rt = await readRuntime();
+  if (rt && rt.pid === process.pid) await unlink(RUNTIME_FILE).catch(() => {});
+}
+
+async function shutdown(reason) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log("日记服务退出：" + reason);
+  await cleanupRuntime();
+  process.exit(0);
+}
+
 /** 打开默认浏览器（静默；Windows 用 rundll32，避免弹出多余窗口） */
 function openBrowser(url) {
   try {
@@ -552,29 +609,41 @@ async function isOurs(port) {
 if (FLAGS.has("--stop")) {
   const rt = await readRuntime();
   const port = rt?.port || PORT;
-  const alive = await isOurs(port);
-  if (!alive) {
-    console.log("没有正在运行的日记服务" + (rt ? `（记录里的端口 ${port} 无响应）` : ""));
-    await unlink(RUNTIME_FILE).catch(() => {});
-    process.exit(0);
-  }
-  let killed = false;
-  if (rt?.pid) {
-    try { process.kill(rt.pid); killed = true; }
-    catch { /* pid 失效，退回到端口查找 */ }
-  }
-  if (!killed && process.platform === "win32") {
-    await new Promise(res => {
-      exec(`netstat -ano | findstr LISTENING | findstr :${port}`, (err, out) => {
-        const pid = (String(out || "").trim().split(/\s+/).pop() || "").trim();
-        if (/^\d+$/.test(pid)) { try { process.kill(Number(pid)); killed = true; } catch { /* ignore */ } }
-        res();
+  if (await isOurs(port)) {
+    // 优先让对面自己体面退出，这样运行时文件也会被清掉
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/quit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "命令行停止" }),
+        signal: AbortSignal.timeout(2500)
       });
-    });
+    } catch { /* 对方可能已经先退出了 */ }
+  }
+
+  // 等它真的走掉；没走掉再强杀
+  let gone = false;
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 150));
+    if (!(await isOurs(port))) { gone = true; break; }
+  }
+  if (!gone) {
+    let killed = false;
+    if (rt?.pid) { try { process.kill(rt.pid); killed = true; } catch { /* pid 失效 */ } }
+    if (!killed && process.platform === "win32") {
+      await new Promise(res => {
+        exec(`netstat -ano | findstr LISTENING | findstr :${port}`, (err, out) => {
+          const pid = (String(out || "").trim().split(/\s+/).pop() || "").trim();
+          if (/^\d+$/.test(pid)) { try { process.kill(Number(pid)); killed = true; } catch { /* ignore */ } }
+          res();
+        });
+      });
+    }
+    gone = killed;
   }
   await unlink(RUNTIME_FILE).catch(() => {});
-  console.log(killed ? `已停止日记服务（端口 ${port}）` : `无法停止端口 ${port} 上的进程，请手动结束`);
-  process.exit(killed ? 0 : 1);
+  console.log(gone ? `已停止日记服务（端口 ${port}）` : `无法停止端口 ${port} 上的进程，请手动结束`);
+  process.exit(gone ? 0 : 1);
 }
 
 /* ───────────────────────── boot ───────────────────────── */
@@ -613,23 +682,36 @@ await buildIndex();
 server.listen(PORT, "127.0.0.1", async () => {
   const url = `http://127.0.0.1:${PORT}/`;
   await writeFile(RUNTIME_FILE, JSON.stringify({
-    pid: process.pid, port: PORT, url, root: ROOT, startedAt: new Date().toISOString()
+    pid: process.pid, port: PORT, url, root: ROOT,
+    idleMinutes: IDLE_MIN, startedAt: new Date().toISOString()
   }, null, 2) + "\n", "utf8").catch(() => {});
 
   console.log("日记 · 桑榆下 —— 本地服务");
   console.log("  目录: " + ROOT);
   console.log("  地址: " + url);
-  console.log("  停止: Ctrl + C  或  node _tools/server.mjs --stop");
+  if (IDLE_MIN > 0) console.log(`  生命周期: 浏览器关闭约 ${IDLE_MIN} 分钟后自动退出（网页里也有退出按钮）`);
+  else console.log("  停止: Ctrl + C  或  node _tools/server.mjs --stop");
   if (FLAGS.has("--open")) openBrowser(url);
 });
 
-/** 退出时清掉运行时文件，避免启动器读到过期端口 */
-async function cleanup() {
-  const rt = await readRuntime();
-  if (rt && rt.pid === process.pid) await unlink(RUNTIME_FILE).catch(() => {});
-  process.exit(0);
+/* 浏览器关闭后自动退出：宽限期内没有心跳就认为不再需要服务 */
+if (IDLE_MIN > 0) {
+  const graceMs = IDLE_MIN * 60000;
+  const timer = setInterval(() => {
+    const idle = Date.now() - lastSeen;
+    if (everConnected && idle > graceMs) {
+      clearInterval(timer);
+      shutdown(`浏览器已关闭约 ${IDLE_MIN} 分钟`);
+    } else if (!everConnected && Date.now() - startTs > graceMs * 3) {
+      // 起了服务却始终没人打开页面（例如误点），也别一直挂着
+      clearInterval(timer);
+      shutdown("启动后一直没有人连接");
+    }
+  }, CHECK_MS);
+  timer.unref?.();
 }
-process.on("SIGINT", cleanup);
-process.on("SIGTERM", cleanup);
+
+process.on("SIGINT", () => shutdown("收到 Ctrl+C"));
+process.on("SIGTERM", () => shutdown("收到终止信号"));
 
 export { server, ROOT, buildIndex, readConfig, writeConfig, readLedger, writeLedger };

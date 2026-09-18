@@ -27,11 +27,15 @@ if /i "%~1"=="--status" goto status
 
 rem Detach the server so this window can close right away
 rem (otherwise the hidden console would sit and wait on the node process).
-rem The VBS launcher redirects node output to data\server.log.
+rem
+rem --idle=3 : the server keeps a heartbeat with the page and exits by itself
+rem about 3 minutes after the browser is closed. The grace period absorbs
+rem page reloads and tab switches. Pressing the quit button in the page
+rem stops it immediately.
 if "%~1"=="" (
-  start "" /b node "_tools\server.mjs" --open
+  start "" /b node "_tools\server.mjs" --open --idle=3
 ) else (
-  start "" /b node "_tools\server.mjs" %* --open
+  start "" /b node "_tools\server.mjs" %* --open --idle=3
 )
 exit /b 0
 

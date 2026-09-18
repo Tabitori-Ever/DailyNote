@@ -10,15 +10,14 @@
 
 ### 桌面快捷方式（推荐）
 
-已经在你桌面生成了两个快捷方式：
+桌面上有一个图标（就是那个日记本）：
 
 | 快捷方式 | 作用 |
 | --- | --- |
 | **日记 · 桑榆下** | 后台起服务并自动打开浏览器，全程无黑框窗口；已在运行则只打开页面，不会重复启动 |
-| **日记 · 停止服务** | 停掉后台服务 |
 
-把「日记 · 桑榆下」拖到任务栏就能固定成任务栏按钮。想开机自启：
-<kbd>Win</kbd>+<kbd>R</kbd> 输入 `shell:startup`，把启动快捷方式复制进去。
+拖到任务栏就能固定成任务栏按钮。想开机自启：
+<kbd>Win</kbd>+<kbd>R</kbd> 输入 `shell:startup`，把快捷方式复制进去。
 
 快捷方式丢了或换了电脑，重新生成一次即可：
 
@@ -26,16 +25,28 @@
 powershell -ExecutionPolicy Bypass -File _tools\setup-desktop.ps1
 ```
 
+### 服务怎么关（不需要单独的操作）
+
+服务跟着浏览器一起走，**不用记得去关它**：
+
+| 情形 | 行为 |
+| --- | --- |
+| 点顶栏右上角的**退出按钮** | 立刻停止服务，页面切到「已退出」提示屏，然后可以关掉标签页 |
+| 直接**关掉浏览器页面** | 页面会发一个关闭通知；服务在约 **3 分钟**宽限期后自动退出 |
+| 刷新页面 / 切标签 / 手机息屏 | 心跳很短，**不会被误杀**；宽限期内重新打开会续上，不会重启服务 |
+
+宽限期默认 3 分钟，用 `--idle=<分钟>` 调整；不加这个参数就是常驻模式（命令行调试时用）。
+心跳是页面每 15 秒 ping 一次 `/api/heartbeat`，关闭时用 `sendBeacon` 通知 `/api/pagehide`。
+
 ### 命令行
 
 ```powershell
-node _tools/server.mjs              # 默认 http://127.0.0.1:8787
-node _tools/server.mjs 9000         # 指定端口
-node _tools/server.mjs --open       # 启动后自动开浏览器
-node _tools/server.mjs --stop       # 停掉正在运行的服务
+node _tools/server.mjs                    # 常驻模式，Ctrl+C 停止
+node _tools/server.mjs --open --idle=3    # 启动后开浏览器，关页面 3 分钟后自动退出
+node _tools/server.mjs --stop             # 手动停掉正在运行的服务
 ```
 
-或者用启动器（带 Node 环境检查与中文提示）：
+或者用启动器（带 Node 环境检查，等价于上面的 `--open --idle=3`）：
 
 ```powershell
 _tools\launch.cmd            # 启动并打开浏览器
@@ -47,11 +58,27 @@ _tools\launch.cmd --stop     # 停止
 —— 那样只能阅读，不能写入。服务是**纯 Node 内置模块，零 npm 依赖**，
 整个 `_tools/` 就是全部后端，拷走整个文件夹即可在别的机器上跑。
 
+### 图标
+
+图标是照着站点配色（纸 `#e8e5e1` / 墨 `#1c1a16` / 琥珀 `#a67d48`）画的日记本：
+米色封面 + 琥珀书脊 + 三条笔迹 + 飘带书签，无渐变。
+
+改了图标源重新生成全套尺寸：
+
+```powershell
+python _tools\make-icon.py     # 需要 Pillow
+```
+
+会输出 `assets/icons/` 下的 `diary.svg`、`diary-16…256.png` 与多尺寸 `diary.ico`。
+`diary.ico` 供 Windows 快捷方式使用，`diary.svg` 是浏览器标签页图标。
+
 ### 自测
 
 ```powershell
-node _tools/test-api.mjs        # 服务端接口回归（35 项）
+node _tools/test-api.mjs          # 服务端接口回归（35 项）
+node _tools/test-lifecycle.mjs    # 服务生命周期：心跳 / 超时退出 / 退出接口（15 项，约 2 分钟）
 node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-ui.mjs"   # 界面回归（57 项）
+node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-quit.mjs" # 心跳与退出按钮（17 项）
 ```
 
 ---
@@ -142,14 +169,18 @@ node _tools/uitest.mjs "http://127.0.0.1:8787/" "_tools/shots" "_tools/test-ui.m
 │  ├─ index.json              检索清单（服务端自动生成）
 │  ├─ 2025/2025-09-09.md
 │  └─ 2026/2026-09-18.md
-├─ assets/YYYY/MM/            插入的图片
+├─ assets/
+│  ├─ YYYY/MM/                插入的图片
+│  └─ icons/                  应用图标（diary.ico / .svg / 各尺寸 png）
 ├─ data/
 │  ├─ config.json             模板、纪念日、心情、阅读器设置
 │  └─ ledger.json             记账数据
 ├─ _tools/
 │  ├─ server.mjs              本地服务：文件读写 / 上传 / 账本 / 配置 / Git
 │  ├─ launch.cmd              启动器（纯 ASCII + CRLF，cmd 的硬性要求）
-│  ├─ setup-desktop.ps1       生成桌面启动 / 停止快捷方式
+│  ├─ setup-desktop.ps1       生成桌面快捷方式（带图标）
+│  ├─ make-icon.py            生成日记图标（SVG / PNG / ICO）
+│  ├─ test-lifecycle.mjs      服务生命周期回归
 │  ├─ build-index.mjs         单独重建 entries/index.json
 │  ├─ new-entry.mjs           命令行新建日记
 │  ├─ test-api.mjs            接口回归测试（35 项）

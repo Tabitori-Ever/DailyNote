@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="512" height="512">
+  <!-- 日记本：纸 / 墨 / 琥珀三色，无渐变 -->
+  <g>
+    <rect x="3" y="1.6" width="23" height="29.2" rx="2.6" fill="#f5f3ef"/>
+    <rect x="3.9" y="2.5" width="21.2" height="27.4" rx="2.2" fill="none" stroke="#d9d4cb" stroke-width="0.5"/>
+    <rect x="3" y="1.6" width="6.4" height="29.2" rx="2.6" fill="#a67d48"/>
+    <rect x="10.4" y="9" width="12" height="1.5" fill="#b0aa9e"/>
+    <rect x="10.4" y="14.2" width="12" height="1.5" fill="#b0aa9e"/>
+    <rect x="10.4" y="19.4" width="7.4" height="1.5" fill="#b0aa9e"/>
+    <rect x="20.4" y="1.6" width="4.2" height="10.6" fill="#1c1a16"/>
+    <path d="M20.4 12.2 L22.5 9.6 L24.6 12.2 Z" fill="#a67d48"/>
+  </g>
+</svg>
