@@ -13,10 +13,10 @@
   ],
   "anniversaries": [],
   "reader": {
-    "fontSize": 24,
-    "lineHeight": 2.4,
-    "width": 1200,
-    "serif": true
+    "fontSize": 18,
+    "lineHeight": 1.9,
+    "width": 960,
+    "serif": false
   },
   "moods": [
     "😊",

@@ -363,10 +363,34 @@ export default async function run(api, { url }) {
   await click("#btnTheme");
   await sleep(400);
 
-  /* ── 12. 收尾截图 ── */
-  await inject(`S.sideY=2026; S.sideM=9; renderSideCal(); return null;`);
-  await sleep(300);
+  /* ── 12. 复原测试期间改动的配置，并收尾截图 ── */
+  await inject(`
+    (async () => {
+      await fetch('/api/config', { method:'PUT', headers:{'content-type':'application/json'},
+        body: JSON.stringify({
+          reader: { fontSize: 18, lineHeight: 1.9, width: 960, serif: false },
+          anniversaries: [],
+          ledgerEnabled: false
+        }) });
+      await reloadAll();
+      S.sideY=2026; S.sideM=9; renderSideCal();
+      if (!S.current && S.entries.length) await openEntry(S.entries[0].date);
+      return null;
+    })()
+  `);
+  await sleep(800);
   await shot("07-final-reader.png");
+
+  const restored = await inject(`
+    const r = S.reader;
+    return { size: r.fontSize, lh: r.lineHeight, width: r.width, serif: r.serif,
+             anniv: S.anniversaries.length,
+             ledgerHidden: document.querySelector('.tab[data-nav="ledger"]').hidden,
+             docSize: document.querySelector('.doc') ? getComputedStyle(document.querySelector('.doc')).fontSize : null };
+  `);
+  log(restored.size === 18 && restored.width === 960 && !restored.serif, "测试后阅读器配置已复原", JSON.stringify(restored));
+  log(restored.anniv === 0, "测试后纪念日配置已清空");
+  log(restored.ledgerHidden === true, "测试后记账入口复原为隐藏");
 
   const fail = T.filter(x => !x.ok).length;
   console.log(`\n通过 ${T.length - fail} · 失败 ${fail}`);
