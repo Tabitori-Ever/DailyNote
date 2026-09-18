@@ -224,6 +224,7 @@ async function buildIndex() {
   const entries = await listEntries();
   const tags = {};
   for (const e of entries) for (const t of e.tags) tags[t] = (tags[t] || 0) + 1;
+
   const index = {
     generatedAt: new Date().toISOString(),
     generator: "diary/server.mjs",
@@ -241,6 +242,21 @@ async function buildIndex() {
       excerpt: e.excerpt, file: e.file, created: e.created, updated: e.updated
     }))
   };
+
+  // 内容没变就不重写：否则每次启动服务都会只因为 generatedAt 变一下
+  // 就把工作区弄脏，Git 历史里全是噪音
+  const prevText = await readFile(INDEX_FILE, "utf8").catch(() => null);
+  if (prevText) {
+    try {
+      const prev = JSON.parse(prevText);
+      if (JSON.stringify(prev.entries) === JSON.stringify(index.entries) &&
+          JSON.stringify(prev.stats) === JSON.stringify(index.stats) &&
+          prev.count === index.count) {
+        return prev;
+      }
+    } catch { /* 旧文件坏了，直接重写 */ }
+  }
+
   await atomicWrite(INDEX_FILE, JSON.stringify(index, null, 2) + "\n");
   return index;
 }
