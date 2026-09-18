@@ -52,15 +52,27 @@ export default async function run(api, { url }) {
   log(typing.text === "= 34.10", "★ 输入算式时实时显示 = 34.10", JSON.stringify(typing.text));
   log(/ok/.test(typing.cls), "结果用强调色标出", typing.cls);
 
+  // 未写完的算式：提示继续输入，不算错误（手打时每一步报红会让人以为输不进去）
   const typing2 = await inject(`
     const inp = document.querySelector('#ledIn');
-    inp.value = '5+';
+    inp.value = '5+10.6+11.';
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     const out = document.querySelector('#ledInCalc');
     return { text: out.textContent, cls: out.className };
   `);
-  log(/无法解析/.test(typing2.text), "★ 非法算式明确报错而不是当成 0", JSON.stringify(typing2.text));
-  log(/bad/.test(typing2.cls), "错误状态有独立样式", typing2.cls);
+  log(/继续输入/.test(typing2.text), "★ 未写完的算式提示「继续输入…」而非报错", JSON.stringify(typing2.text));
+  log(/partial/.test(typing2.cls), "未写完用中性样式（不是错误色）", typing2.cls);
+
+  // 真正非法的输入才报错
+  const typing3 = await inject(`
+    const inp = document.querySelector('#ledIn');
+    inp.value = 'abc';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    const out = document.querySelector('#ledInCalc');
+    return { text: out.textContent, cls: out.className };
+  `);
+  log(/无法解析/.test(typing3.text), "★ 真正非法的输入明确报错而不是当成 0", JSON.stringify(typing3.text));
+  log(/bad/.test(typing3.cls), "非法输入有独立错误样式", typing3.cls);
 
   const plainNum = await inject(`
     const inp = document.querySelector('#ledIn');

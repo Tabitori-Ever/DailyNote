@@ -511,8 +511,11 @@ a:hover { border-bottom-color: var(--accent); }
   outline: none; border-color: var(--accent); background: var(--paper-3);
 }
 .inp::placeholder, .area::placeholder { color: var(--ink-4); }
-.inp--num { font-family: var(--mono); text-align: right; width: 120px; }
-/* 算式输入：下方实时显示算出来的值 */
+.inp--num { font-family: var(--mono); text-align: right; width: 100%; min-width: 130px; }
+/* 算式可能很长（5+10.6+11.6+6.9），输入框必须放得下，
+   否则光标会把文字推到框外，看着像「打不进去了」 */
+.inp--num--wide { min-width: 210px; }
+/* 算式输入：下方实时显示解析状态 */
 .calc {
   display: block;
   min-height: 15px;
@@ -524,6 +527,8 @@ a:hover { border-bottom-color: var(--accent); }
   line-height: 1.3;
 }
 .calc.ok { color: var(--accent); }
+/* 还没打完（例如 5+10.6+11.）—— 不算错误，只是提示继续 */
+.calc.partial { color: var(--ink-4); }
 .calc.bad { color: #a4463c; }
 html[data-dark] .calc.bad { color: #d98b7f; }
 .area { width: 100%; resize: vertical; line-height: 1.85; }
@@ -848,12 +853,12 @@ html[data-dark] .modal__scrim { background: rgba(0, 0, 0, 0.6); }
       <div class="f"><span class="lbl">备注</span><input class="inp" id="ledNote" placeholder="例如：午饭" style="width:190px"></div>
       <div class="f">
         <span class="lbl">收入</span>
-        <input class="inp inp--num" id="ledIn" inputmode="text" autocomplete="off" placeholder="0 或 5+10.6">
+        <input class="inp inp--num inp--num--wide" id="ledIn" inputmode="text" autocomplete="off" placeholder="0 或 5+10.6+11.6">
         <span class="calc" id="ledInCalc"></span>
       </div>
       <div class="f">
         <span class="lbl">支出</span>
-        <input class="inp inp--num" id="ledEx" inputmode="text" autocomplete="off" placeholder="0 或 5+10.6">
+        <input class="inp inp--num inp--num--wide" id="ledEx" inputmode="text" autocomplete="off" placeholder="0 或 5+10.6+11.6">
         <span class="calc" id="ledExCalc"></span>
       </div>
       <button class="btn btn--solid" id="ledAdd">记一笔</button>
@@ -1015,12 +1020,12 @@ html[data-dark] .modal__scrim { background: rgba(0, 0, 0, 0.6); }
             <span class="lbl">当日收支</span>
             <div class="insert-form">
               <input class="inp inp--num" id="edIn" inputmode="text" autocomplete="off"
-                     placeholder="收入，可写 5+10.6" title="收入" style="width:100%;">
+                     placeholder="收入，可写 5+10.6+11.6" title="收入" style="width:100%;">
             </div>
             <span class="calc" id="edInCalc"></span>
             <div class="insert-form" style="margin-top:6px">
               <input class="inp inp--num" id="edEx" inputmode="text" autocomplete="off"
-                     placeholder="支出，可写 5+10.6" title="支出" style="width:100%;">
+                     placeholder="支出，可写 5+10.6+11.6" title="支出" style="width:100%;">
             </div>
             <span class="calc" id="edExCalc"></span>
             <span class="lbl" id="edMoneyHint">默认 0，不计入账本</span>
@@ -1211,19 +1216,28 @@ function amountCell(v, cls) {
  * 把「收入 / 支出」输入框的值显示成实时结果。
  * 输入是算式时给出 = 值；算式不合法时明确报错，而不是静默当成 0。
  */
-function refreshCalc(inputSel, outSel, { withSum = false } = {}) {
+function refreshCalc(inputSel, outSel) {
   const input = $(inputSel);
   const out = $(outSel);
   if (!input || !out) return null;
   const raw = input.value.trim();
-  const n = parseAmount(raw);
-  out.classList.remove("ok", "bad");
+  out.classList.remove("ok", "bad", "partial");
 
-  if (!raw || n === 0) {
+  // 还没打完的算式（结尾是运算符或小数点）不算错误 ——
+  // 手打「5+10.6+11.」时每一步都报红，会让人以为输入被拒绝了
+  const incomplete = /[+\-*/^(.]$/.test(raw);
+  const n = parseAmount(raw);
+
+  if (!raw) {
     out.textContent = "";
     return { raw: "", value: 0, ok: true, empty: true };
   }
   if (Number.isNaN(n)) {
+    if (incomplete) {
+      out.textContent = "继续输入…";
+      out.classList.add("partial");
+      return { raw, value: NaN, ok: false, incomplete: true };
+    }
     out.textContent = "算式无法解析";
     out.classList.add("bad");
     return { raw, value: NaN, ok: false };
@@ -1939,7 +1953,8 @@ const Ed = {
     const cin = refreshCalc("#edIn", "#edInCalc");
     const cex = refreshCalc("#edEx", "#edExCalc");
     if (!cin.ok || !cex.ok) {
-      $("#edMoneyHint").textContent = "算式无法解析，请检查";
+      const inc2 = cin.incomplete, ex2 = cex.incomplete;
+      $("#edMoneyHint").textContent = (inc2 || ex2) ? "算式还没写完" : "算式无法解析，请检查";
       return;
     }
     const inc = cin.value || 0, exp = cex.value || 0;
