@@ -1,0 +1,39 @@
+{
+  "templates": [
+    {
+      "id": "default",
+      "name": "事件 / 爱好 / 生活",
+      "sections": [
+        "事件",
+        "爱好",
+        "生活"
+      ],
+      "builtin": true
+    }
+  ],
+  "anniversaries": [],
+  "reader": {
+    "fontSize": 18,
+    "lineHeight": 1.9,
+    "width": 960,
+    "serif": false
+  },
+  "moods": [
+    "😊",
+    "🙂",
+    "😐",
+    "😔",
+    "😣",
+    "😤",
+    "😴",
+    "🥳",
+    "😭",
+    "😰",
+    "🤔",
+    "😌"
+  ],
+  "ledgerEnabled": false,
+  "ui": {
+    "sidebar": true
+  }
+}

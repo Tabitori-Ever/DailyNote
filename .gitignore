@@ -1,0 +1,29 @@
+# 依赖与构建产物
+node_modules/
+*.log
+
+# 应用运行时数据（本地生成，不需要版本管理）
+data/ledger.json.bak
+*.tmp
+*.bak
+
+# 参考资料：Rhine Lab 风格参考项目原样下载，不属于日记系统
+RhineLabUI-main/
+RhineLabUI-main.zip
+
+# 原始 OneNote 文件（内容已迁移为 entries/*.md，保留在本地备查）
+2025年.one
+打开笔记本.onetoc2
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# 界面自测产物（截图与浏览器配置都不入库，避免仓库变成图片堆）
+_tools/shots/
+
+# SSH 私钥（仅本机使用，绝不提交）
+.ssh/

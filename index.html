@@ -1,0 +1,2342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="日记 · 桑榆下 —— 本地优先的日记系统">
+<title>日记 · 桑榆下</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23211f1a'/%3E%3Crect x='6' y='6' width='20' height='20' fill='none' stroke='%23a67d48' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   日记 · 桑榆下
+   视觉基准：Rhine Lab —— 暖白纸底 / 近黑墨色 / 单一琥珀强调色
+             直角、1px 细线、大字距小标签；不使用渐变、不使用装饰性阴影
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ---------- 1. 设计令牌 ---------- */
+:root {
+  --paper:        #e8e5e1;
+  --paper-2:      #efece8;
+  --paper-3:      #f6f4f1;
+  --paper-sunk:   #dedad4;
+  --ink:          #1c1a16;
+  --ink-2:        #45423b;
+  --ink-3:        #6f6b62;
+  --ink-4:        #9c978c;
+  --line:         #cdc7be;
+  --line-2:       #b8b1a5;
+  --line-3:       #a29a8c;
+  --accent:       #a67d48;
+  --accent-ink:   #f6f4f1;
+  --accent-soft:  rgba(166, 125, 72, 0.10);
+  --sel:          #cbb397;
+
+  --r:   2px;
+  --r-2: 3px;
+
+  --sans: "MiSans", "Mi Sans", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI",
+          "Microsoft YaHei", system-ui, sans-serif;
+  --serif: "Source Han Serif SC", "Songti SC", "Noto Serif SC", "SimSun", Georgia, serif;
+  --mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
+
+  --sidebar-w: 236px;
+  --bar-h: 54px;
+
+  /* 阅读器（由设置覆盖） */
+  --read-size: 18px;
+  --read-lh: 1.9;
+  --read-width: 960px;
+  --read-font: var(--sans);
+
+  --t: 160ms;
+  --ease: cubic-bezier(0.22, 0.72, 0.2, 1);
+}
+
+html[data-dark] {
+  --paper:      #211f1a;
+  --paper-2:    #26241f;
+  --paper-3:    #2c2a24;
+  --paper-sunk: #191713;
+  --ink:        #ece9e4;
+  --ink-2:      #c4bfb5;
+  --ink-3:      #948e83;
+  --ink-4:      #6d675d;
+  --line:       #3a372f;
+  --line-2:     #4a463c;
+  --line-3:     #5b564a;
+  --accent:     #c39a5f;
+  --accent-ink: #191713;
+  --accent-soft: rgba(195, 154, 95, 0.12);
+  --sel:        #6b5636;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+::selection { background: var(--sel); color: var(--ink); }
+
+button, input, textarea, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; padding: 0; }
+a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line-2); }
+a:hover { border-bottom-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: var(--paper-sunk); }
+::-webkit-scrollbar-thumb { background: var(--line-2); border: 3px solid var(--paper-sunk); }
+::-webkit-scrollbar-thumb:hover { background: var(--line-3); }
+* { scrollbar-width: thin; scrollbar-color: var(--line-2) var(--paper-sunk); }
+
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* 统一的小标签排版：Rhine Lab 的大字距全大写风格 */
+.lbl {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+/* ---------- 2. 顶栏 ---------- */
+.bar {
+  position: sticky; top: 0; z-index: 40;
+  height: var(--bar-h);
+  display: flex; align-items: stretch;
+  background: var(--paper);
+  border-bottom: 1px solid var(--ink);
+}
+.bar__brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 16px;
+  border-right: 1px solid var(--line);
+  flex: none;
+}
+.bar__mark {
+  width: 20px; height: 20px; flex: none;
+  border: 1.5px solid var(--accent);
+  position: relative;
+}
+.bar__mark::after {
+  content: ""; position: absolute; inset: 4px;
+  background: var(--accent);
+}
+.bar__name { font-size: 14px; font-weight: 600; letter-spacing: 0.06em; }
+.bar__sub { font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; color: var(--ink-4); }
+
+.tabs { display: flex; align-items: stretch; flex: none; }
+.tab {
+  padding: 0 18px;
+  display: flex; align-items: center;
+  font-size: 14px;
+  color: var(--ink-3);
+  border-right: 1px solid var(--line);
+  border-bottom: 2px solid transparent;
+  transition: color var(--t) var(--ease), border-color var(--t) var(--ease), background var(--t) var(--ease);
+}
+.tab:hover { color: var(--ink); background: var(--paper-2); }
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.bar__spacer { flex: 1 1 auto; min-width: 8px; }
+.bar__acts { display: flex; align-items: stretch; flex: none; }
+
+/* 按钮：直角、细线、文字为主 */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 30px; padding: 0 11px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: 13.5px;
+  white-space: nowrap;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.btn:hover { border-color: var(--ink-3); color: var(--ink); background: var(--paper-3); }
+.btn:active { background: var(--paper-sunk); }
+.btn[disabled] { opacity: 0.42; cursor: not-allowed; }
+.btn--flat { background: transparent; border-color: transparent; }
+.btn--flat:hover { background: var(--paper-2); border-color: var(--line); }
+.btn--solid { background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 600; }
+.btn--solid:hover { background: var(--ink-2); border-color: var(--ink-2); color: var(--paper); }
+.btn--accent { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn--accent:hover { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn--on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.btn--icon { width: 30px; padding: 0; justify-content: center; }
+.btn--lg { height: 36px; padding: 0 15px; font-size: 14px; }
+.btn__i { width: 15px; height: 15px; flex: none; }
+.btn kbd {
+  font-family: var(--mono); font-size: 10px;
+  padding: 1px 4px; border: 1px solid var(--line-2); color: var(--ink-4);
+}
+.bar__acts .btn { margin: 0 4px; height: 32px; align-self: center; }
+.bar__acts { border-left: 1px solid var(--line); }
+
+/* ---------- 3. 布局 ---------- */
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  height: calc(100dvh - var(--bar-h));
+}
+/* 收起时把网格列真正压到 0，否则侧栏不可见但仍占着 236px */
+.shell[data-sidebar="off"] { --sidebar-w: 0px; }
+.shell[data-sidebar="off"] .side { opacity: 0; pointer-events: none; }
+
+.side {
+  border-right: 1px solid var(--line);
+  overflow: hidden auto;
+  padding: 16px 14px 60px;
+  transition: opacity var(--t) var(--ease);
+}
+.view { overflow: hidden auto; min-width: 0; }
+.view[hidden] { display: none; }
+
+/* ---------- 4. 侧栏：日历 / 归档 / 纪念日 ---------- */
+.sec + .sec { margin-top: 22px; }
+.sec__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding-bottom: 8px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.sec__head .lbl { white-space: nowrap; }
+.sec__acts { display: flex; gap: 2px; }
+
+.cal__nav { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.cal__month {
+  flex: 1 1 auto; text-align: center;
+  font-family: var(--mono); font-size: 14px; font-weight: 600; letter-spacing: 0.05em;
+}
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+.cal__dow {
+  text-align: center; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: 0.1em; color: var(--ink-4); padding-bottom: 4px;
+}
+.cal__dow:first-child, .cal__dow:last-child { color: var(--accent); }
+.cal__c {
+  position: relative;
+  aspect-ratio: 1;
+  display: grid; place-items: center;
+  font-size: 12.5px; font-variant-numeric: tabular-nums;
+  color: var(--ink-4);
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  transition: background var(--t) var(--ease), color var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.cal__c.is-blank { pointer-events: none; }
+.cal__c.has { color: var(--ink); font-weight: 600; cursor: pointer; background: var(--paper-2); }
+.cal__c.has:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.cal__c.no { cursor: default; opacity: 0.45; }
+.cal__c.today { box-shadow: inset 0 0 0 1px var(--accent); }
+.cal__c.cur { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.cal__c.anniv::before {
+  content: ""; position: absolute; inset: 1px;
+  border: 1px solid var(--accent); border-radius: var(--r);
+  pointer-events: none;
+}
+.cal__c .mo {
+  position: absolute; right: 1px; bottom: 0;
+  font-size: 8.5px; line-height: 1;
+  filter: saturate(0.9);
+}
+.cal__c.has { padding-bottom: 3px; }
+
+.arch { display: flex; flex-direction: column; gap: 1px; }
+.arch__row {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 7px;
+  font-size: 13px; color: var(--ink-2);
+  border-radius: var(--r);
+  text-align: left;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
+}
+.arch__row:hover { background: var(--paper-2); color: var(--ink); }
+.arch__bar { height: 3px; background: var(--line-2); flex: none; }
+.arch__row:hover .arch__bar { background: var(--accent); }
+.arch__n { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+
+.anniv__row {
+  display: flex; align-items: baseline; gap: 8px;
+  width: 100%; padding: 6px 7px; text-align: left;
+  font-size: 13px; color: var(--ink-2); border-radius: var(--r);
+}
+.anniv__row:hover { background: var(--paper-2); }
+.anniv__n { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
+.anniv__t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anniv__d { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); flex: none; }
+
+.empty-note { font-size: 13px; color: var(--ink-4); padding: 4px 7px; line-height: 1.7; }
+
+/* ---------- 5. 阅读区（大字 + 宽栏） ---------- */
+.reader { padding: 30px 40px 140px; }
+.reader__inner { max-width: var(--read-width); margin: 0 auto; transition: max-width var(--t) var(--ease); }
+
+.masthead { border-bottom: 1px solid var(--ink); padding-bottom: 16px; margin-bottom: 26px; }
+.masthead__top {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.masthead__date {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.16em;
+  color: var(--accent); text-transform: uppercase;
+}
+.masthead__sep { flex: 1 1 auto; height: 1px; background: var(--line); min-width: 12px; }
+.masthead__mood { font-size: 22px; line-height: 1; }
+.masthead__title {
+  margin: 0;
+  font-size: 30px; line-height: 1.3; font-weight: 600; letter-spacing: 0.005em;
+}
+.masthead__meta {
+  margin-top: 12px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 11px; color: var(--ink-4);
+}
+.masthead__meta .dot { width: 3px; height: 3px; background: var(--line-3); flex: none; }
+.masthead__anniv {
+  margin-top: 12px; padding: 8px 12px;
+  border-left: 2px solid var(--accent); background: var(--accent-soft);
+  font-size: 13.5px; color: var(--ink-2);
+}
+
+/* 正文排版 */
+.doc {
+  font-family: var(--read-font);
+  font-size: var(--read-size);
+  line-height: var(--read-lh);
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+.doc > :first-child { margin-top: 0; }
+.doc > :last-child { margin-bottom: 0; }
+.doc p { margin: 0 0 1.05em; }
+.doc h1, .doc h2, .doc h3, .doc h4 {
+  font-weight: 600; line-height: 1.4; color: var(--ink);
+  margin: 1.9em 0 0.7em;
+}
+.doc h1 { font-size: 1.42em; }
+.doc h2 {
+  font-size: 1.16em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--line);
+}
+.doc h3 { font-size: 1.04em; color: var(--ink-2); }
+.doc h4 { font-size: 1em; color: var(--ink-3); }
+.doc strong { font-weight: 700; color: var(--ink); }
+.doc em { font-style: italic; color: var(--ink-2); }
+.doc u { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.doc del { color: var(--ink-4); }
+.doc mark { background: var(--accent-soft); color: var(--ink); padding: 0 3px; }
+.doc ul, .doc ol { margin: 0 0 1.05em; padding-left: 1.5em; }
+.doc li { margin: 0.35em 0; }
+.doc li::marker { color: var(--accent); }
+.doc hr { border: 0; height: 1px; background: var(--line); margin: 2em 0; }
+.doc code {
+  font-family: var(--mono); font-size: 0.85em;
+  padding: 0.12em 0.4em; background: var(--paper-2);
+  border: 1px solid var(--line); border-radius: var(--r);
+}
+.doc pre {
+  margin: 0 0 1.05em; padding: 14px 16px;
+  background: var(--paper-2); border: 1px solid var(--line);
+  border-radius: var(--r); overflow-x: auto;
+}
+.doc pre code { background: none; border: 0; padding: 0; font-size: 0.84em; }
+.doc blockquote {
+  margin: 0 0 1.05em; padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--line-3);
+  color: var(--ink-2);
+}
+.doc blockquote p:last-child { margin-bottom: 0; }
+.doc img {
+  display: block; max-width: 100%; height: auto;
+  margin: 1.4em 0; border: 1px solid var(--line);
+}
+.doc table { width: 100%; border-collapse: collapse; margin: 0 0 1.05em; font-size: 0.94em; }
+.doc th, .doc td { border: 1px solid var(--line); padding: 7px 11px; text-align: left; }
+.doc th { background: var(--paper-2); font-weight: 600; }
+
+/* 日期导航条 */
+.daynav {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 40px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.daynav__sp { flex: 1 1 auto; }
+.daynav__info { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+
+/* 空状态 */
+.blank { padding: 100px 24px; text-align: center; }
+.blank__t { font-size: 17px; color: var(--ink-2); margin-bottom: 8px; }
+.blank__s { font-size: 14px; color: var(--ink-4); line-height: 1.9; }
+
+/* ---------- 6. 时间线：横向年份走廊 ---------- */
+.tl { padding: 22px 0 40px; }
+.tl__bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 26px 16px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.tl__title { font-size: 15px; font-weight: 600; }
+.tl__hint { font-size: 12.5px; color: var(--ink-4); }
+.tl__zoom { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.tl__zoom input { width: 130px; accent-color: var(--accent); }
+
+.corridor {
+  overflow: auto hidden;
+  cursor: grab;
+  padding: 20px 26px 14px;
+  scrollbar-width: thin;
+}
+.corridor.dragging { cursor: grabbing; user-select: none; }
+.corridor__track { display: flex; flex-direction: column; gap: 10px; width: max-content; }
+
+.tlrow { display: flex; align-items: stretch; gap: 0; }
+.tlrow__label {
+  position: sticky; left: 0; z-index: 3;
+  flex: none; width: 62px;
+  display: flex; align-items: center;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  font-family: var(--mono); font-size: 11px; color: var(--ink-4);
+  padding-right: 8px;
+}
+.tlrow--year .tlrow__label { color: var(--accent); font-weight: 600; font-size: 12px; }
+/* 关键：格子容器与月份刻度必须同宽且都不可收缩，
+   否则 flex 会把有记录的格子压缩，导致月份刻度与日期错位 */
+.tlrow__cells { display: flex; align-items: center; gap: 1px; flex: none; }
+.tlrow--year .tlrow__cells { min-height: 30px; }
+.tl__months { display: flex; align-items: flex-end; height: 15px; flex: none; }
+
+.tlcell {
+  position: relative;
+  flex: none;
+  height: 26px;
+  display: flex; align-items: center; justify-content: flex-start;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  font-size: 12px; color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.tlcell--gap { height: 26px; }
+.tlcell.has {
+  cursor: pointer;
+  background: var(--paper-2);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.tlcell.has:hover { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.tlcell.has .k { overflow: hidden; text-overflow: ellipsis; }
+.tlcell.has .md { font-family: var(--mono); font-size: 10px; color: var(--ink-4); margin-right: 5px; }
+.tlcell.has:hover .md { color: var(--paper); }
+.tlcell.cur { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tlcell.cur .md { color: var(--accent-ink); opacity: 0.8; }
+.tlcell.anniv { border-color: var(--accent); }
+.tlcell .mo { margin-right: 4px; font-size: 11px; }
+.tlcell.today { box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* 月份刻度：横向走廊必须随时能看出当前是哪个月 */
+.tl__mcell { font-family: var(--mono); font-size: 9.5px; color: var(--ink-4); padding-left: 3px; overflow: hidden; }
+.tl__mcell span { display: inline-block; border-left: 1px solid var(--line-2); padding-left: 4px; white-space: nowrap; }
+
+/* ---------- 7. 记账 ---------- */
+.ledger { padding: 26px 34px 120px; max-width: 1040px; }
+.led__bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+.led__month { font-family: var(--mono); font-size: 17px; font-weight: 600; letter-spacing: 0.06em; }
+.sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: 20px; }
+.sum__c { background: var(--paper); padding: 15px 17px; }
+.sum__n { font-family: var(--mono); font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+.sum__n--in { color: var(--accent); }
+.sum__l { margin-top: 4px; }
+.led__table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.led__table th {
+  text-align: left; padding: 9px 11px;
+  border-bottom: 1px solid var(--ink);
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--ink-4); font-weight: 500;
+}
+.led__table td { padding: 10px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.led__table tr:hover td { background: var(--paper-2); }
+.led__table .num { font-family: var(--mono); text-align: right; white-space: nowrap; }
+.led__table .in { color: var(--accent); }
+.led__table .ex { color: var(--ink-2); }
+.tagpill {
+  display: inline-block; padding: 1px 6px;
+  border: 1px solid var(--line-2); border-radius: var(--r);
+  font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+}
+.led__form { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.led__form .f { display: flex; flex-direction: column; gap: 5px; }
+
+/* 表单控件 */
+.inp, .sel, .area {
+  background: var(--paper-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  padding: 7px 10px;
+  font-size: 14px;
+  color: var(--ink);
+  min-width: 0;
+  transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+}
+.inp:hover, .sel:hover, .area:hover { border-color: var(--line-3); }
+.inp:focus, .sel:focus, .area:focus {
+  outline: none; border-color: var(--accent); background: var(--paper-3);
+}
+.inp::placeholder, .area::placeholder { color: var(--ink-4); }
+.inp--num { font-family: var(--mono); text-align: right; width: 110px; }
+.area { width: 100%; resize: vertical; line-height: 1.85; }
+.sel { appearance: none; padding-right: 26px; background-image: none; }
+
+/* ---------- 8. 设置 ---------- */
+.settings { padding: 26px 34px 120px; max-width: 880px; }
+.set { padding: 18px 0; border-bottom: 1px solid var(--line); }
+.set:first-of-type { border-top: 1px solid var(--line); }
+.set__row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.set__t { flex: 1 1 240px; min-width: 0; }
+.set__t strong { display: block; font-size: 15px; font-weight: 600; }
+.set__t span { display: block; margin-top: 4px; font-size: 13px; color: var(--ink-4); line-height: 1.7; }
+.set__c { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rng { width: 190px; accent-color: var(--accent); }
+.rng__v { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); min-width: 46px; text-align: right; }
+
+.tpl { display: flex; flex-direction: column; gap: 1px; margin-top: 12px; }
+.tpl__row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border: 1px solid var(--line); background: var(--paper-2);
+  border-radius: var(--r);
+}
+.tpl__name { font-size: 14px; font-weight: 600; flex: none; }
+.tpl__secs { flex: 1 1 auto; display: flex; gap: 5px; flex-wrap: wrap; }
+.tpl__old { opacity: 0.5; pointer-events: none; }
+
+/* ---------- 9. 弹窗（直角纸面，不用毛玻璃） ---------- */
+.modal { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 22px; }
+.modal[hidden] { display: none; }
+.modal__scrim { position: absolute; inset: 0; background: rgba(28, 26, 22, 0.42); opacity: 0; transition: opacity var(--t) var(--ease); }
+html[data-dark] .modal__scrim { background: rgba(0, 0, 0, 0.6); }
+.modal.open .modal__scrim { opacity: 1; }
+
+.panel {
+  position: relative;
+  width: min(500px, 100%);
+  max-height: min(860px, calc(100dvh - 44px));
+  display: flex; flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: var(--r);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+}
+.modal.open .panel { opacity: 1; transform: none; }
+.panel--wide { width: min(920px, 100%); }
+.panel__head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--ink);
+  flex: none;
+}
+.panel__title { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+.panel__sub { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.panel__x { margin-left: auto; }
+.panel__body { flex: 1 1 auto; min-height: 0; overflow: hidden auto; padding: 16px 18px; }
+.panel__foot {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 12px 18px; border-top: 1px solid var(--line);
+  background: var(--paper-2); flex: none;
+}
+.panel__foot .sp { flex: 1 1 auto; }
+
+/* 日期检索弹窗 */
+.pick__bar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.pick__label { flex: 1 1 auto; text-align: center; font-family: var(--mono); font-size: 15px; font-weight: 600; }
+.pick__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.pick__c {
+  position: relative; aspect-ratio: 1;
+  display: grid; place-items: center;
+  font-size: 13.5px; font-variant-numeric: tabular-nums;
+  color: var(--ink-4);
+  border: 1px solid transparent; border-radius: var(--r);
+  transition: background var(--t) var(--ease), color var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.pick__c.is-blank { pointer-events: none; }
+.pick__c.no { opacity: 0.4; cursor: not-allowed; }
+.pick__c.has { cursor: pointer; color: var(--ink); font-weight: 600; background: var(--paper-2); border-color: var(--line); }
+.pick__c.has:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.pick__c.today { box-shadow: inset 0 0 0 1px var(--accent); }
+.pick__c.cur { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pick__c.cursor { box-shadow: inset 0 0 0 2px var(--ink); }
+.pick__c.anniv::before { content: ""; position: absolute; inset: 1px; border: 1px solid var(--accent); border-radius: var(--r); }
+.pick__c .mo { position: absolute; right: 1px; bottom: 0; font-size: 9px; line-height: 1; }
+
+/* 编辑器 */
+.ed__grid { display: grid; grid-template-columns: minmax(0, 1fr) 224px; gap: 20px; align-items: start; }
+.ed__main { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.ed__side { display: flex; flex-direction: column; gap: 14px; }
+.ed__field { display: flex; flex-direction: column; gap: 5px; }
+.ed__title {
+  font-size: 19px; font-weight: 600; padding: 9px 11px;
+}
+.ed__body {
+  font-family: var(--mono); font-size: 13.5px; line-height: 1.9;
+  min-height: 330px;
+}
+.ed__tools {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  padding: 6px; background: var(--paper-2); border: 1px solid var(--line-2); border-radius: var(--r);
+}
+.ed__tools .btn { height: 28px; padding: 0 8px; font-size: 13px; background: transparent; border-color: transparent; }
+.ed__tools .btn:hover { background: var(--paper-3); border-color: var(--line); }
+.ed__tools .sep { width: 1px; background: var(--line); margin: 3px 4px; }
+.moods { display: flex; flex-wrap: wrap; gap: 2px; }
+.mood {
+  width: 32px; height: 32px; font-size: 17px; line-height: 1;
+  display: grid; place-items: center;
+  border: 1px solid transparent; border-radius: var(--r);
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.mood:hover { background: var(--paper-2); border-color: var(--line); }
+.mood[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+.tags-edit { display: flex; flex-direction: column; gap: 6px; }
+.tags-edit__list { display: flex; flex-wrap: wrap; gap: 4px; }
+.tage {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border: 1px solid var(--line-2); border-radius: var(--r);
+  font-size: 12px; color: var(--ink-2); background: var(--paper-2);
+}
+.tage button { color: var(--ink-4); font-size: 13px; line-height: 1; }
+.tage button:hover { color: var(--accent); }
+.secpicker { display: flex; flex-wrap: wrap; gap: 4px; }
+.secpicker .btn { height: 26px; font-size: 12px; padding: 0 8px; }
+.insert-form { display: flex; gap: 6px; }
+
+/* 提示条 */
+.toast-host {
+  position: fixed; left: 50%; bottom: 26px; z-index: 120;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 6px; align-items: center;
+  pointer-events: none;
+}
+.toast {
+  padding: 9px 16px;
+  background: var(--ink); color: var(--paper);
+  border-radius: var(--r);
+  font-size: 13.5px;
+  opacity: 0; transform: translateY(8px);
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease);
+  max-width: 78vw;
+}
+.toast.on { opacity: 1; transform: none; }
+
+/* 状态条 */
+.srcline {
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-4);
+  padding: 0 16px; display: flex; align-items: center; gap: 8px;
+  border-left: 1px solid var(--line);
+}
+
+/* ---------- 10. 响应式 ---------- */
+@media (max-width: 1080px) {
+  .reader { padding: 24px 26px 120px; }
+  .ed__grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 860px) {
+  /* 手机：侧栏脱离网格改为抽屉，网格只剩正文一列，正文拿到全部宽度 */
+  .shell { --sidebar-w: 0px; grid-template-columns: minmax(0, 1fr); }
+  .side {
+    position: fixed; inset: var(--bar-h) auto 0 0; z-index: 60;
+    width: 264px; background: var(--paper);
+    border-right: 1px solid var(--ink);
+    transform: translateX(-100%);
+    opacity: 1; pointer-events: auto;
+    transition: transform var(--t) var(--ease);
+  }
+  .shell[data-sidebar="on-mobile"] .side { transform: none; }
+  .bar { overflow: hidden; }
+  .bar__brand { padding: 0 11px; }
+  .bar__brand .bar__sub { display: none; }
+  .bar__name { font-size: 13px; }
+  .tab { padding: 0 11px; font-size: 13.5px; }
+  .view { min-width: 0; }
+  .reader { padding: 20px 16px 110px; }
+  .reader__inner { max-width: none; }
+  .masthead__title { font-size: 23px; }
+  .daynav { flex-wrap: wrap; }
+  .ledger, .settings { padding: 20px 16px 110px; }
+  .sum { grid-template-columns: 1fr; }
+  .srcline { display: none; }
+  .bar__acts .btn span.t { display: none; }
+  .bar__acts .btn { padding: 0 9px; }
+  .panel { max-height: calc(100dvh - 28px); }
+  .modal { padding: 14px; }
+  .ed__grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ 顶栏 ══════════════ -->
+<header class="bar">
+  <div class="bar__brand">
+    <div class="bar__mark" aria-hidden="true"></div>
+    <div>
+      <div class="bar__name">桑榆下</div>
+      <div class="bar__sub">DAILY NOTE</div>
+    </div>
+  </div>
+
+  <nav class="tabs" role="tablist" aria-label="主导航">
+    <button class="tab" role="tab" data-nav="diary" aria-selected="true">日记</button>
+    <button class="tab" role="tab" data-nav="timeline" aria-selected="false">时间线</button>
+    <button class="tab" role="tab" data-nav="ledger" aria-selected="false" hidden>记账</button>
+    <button class="tab" role="tab" data-nav="settings" aria-selected="false">设置</button>
+  </nav>
+
+  <div class="bar__spacer"></div>
+  <div class="srcline" id="srcLine">连接中…</div>
+
+  <div class="bar__acts">
+    <button class="btn btn--icon btn--flat" id="btnSide" title="侧栏 [ ]" aria-label="侧栏">
+      <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h18M3 12h13M3 19h18"/></svg>
+    </button>
+    <button class="btn" id="btnPick" title="日期检索 (Ctrl+K)">
+      <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="16" rx="1.5"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+      <span class="t">日期检索</span>
+    </button>
+    <button class="btn btn--accent" id="btnNew" title="写今天的日记 (Ctrl+N)">
+      <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      <span class="t">写日记</span>
+    </button>
+    <button class="btn btn--flat btn--icon" id="btnTheme" title="明暗切换" aria-label="明暗切换">
+      <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="shell" id="shell" data-sidebar="on">
+
+  <!-- ══════════════ 侧栏 ══════════════ -->
+  <aside class="side" aria-label="导航">
+    <section class="sec">
+      <div class="sec__head">
+        <span class="lbl">日历</span>
+        <div class="sec__acts"><button class="btn btn--flat" id="sideToday" style="height:24px;font-size:12px;padding:0 8px">今天</button></div>
+      </div>
+      <div class="cal__nav">
+        <button class="btn btn--flat btn--icon" id="calPrevY" aria-label="上一年" style="width:24px;height:24px">
+          <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m11 6-6 6 6 6M18 6l-6 6 6 6"/></svg>
+        </button>
+        <button class="btn btn--flat btn--icon" id="calPrev" aria-label="上个月" style="width:24px;height:24px">
+          <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 6-6 6 6 6"/></svg>
+        </button>
+        <div class="cal__month" id="calLabel">—</div>
+        <button class="btn btn--flat btn--icon" id="calNext" aria-label="下个月" style="width:24px;height:24px">
+          <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m10 6 6 6-6 6"/></svg>
+        </button>
+        <button class="btn btn--flat btn--icon" id="calNextY" aria-label="下一年" style="width:24px;height:24px">
+          <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 6 6-6 6M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+      <div class="cal" id="sideCal"></div>
+    </section>
+
+    <section class="sec">
+      <div class="sec__head"><span class="lbl">归档</span><span class="lbl" id="archTotal">0</span></div>
+      <div class="arch" id="sideArch"></div>
+    </section>
+
+    <section class="sec">
+      <div class="sec__head">
+        <span class="lbl">纪念日</span>
+        <button class="btn btn--flat" id="btnAddAnniv" style="height:22px;font-size:11px;padding:0 6px">+</button>
+      </div>
+      <div id="sideAnniv"></div>
+    </section>
+  </aside>
+
+  <!-- ══════════════ 日记 ══════════════ -->
+  <main class="view reader" id="view-diary" role="tabpanel">
+    <div class="reader__inner" id="reader"></div>
+  </main>
+
+  <!-- ══════════════ 时间线 ══════════════ -->
+  <main class="view tl" id="view-timeline" role="tabpanel" hidden>
+    <div class="tl__bar">
+      <span class="tl__title">时间线走廊</span>
+      <span class="tl__hint">拖动左右浏览 · 点击节点查看当天日记</span>
+      <div class="tl__zoom">
+        <span class="lbl">缩放</span>
+        <input type="range" class="rng" id="tlZoom" min="1" max="4" step="1" value="2" aria-label="时间线缩放">
+      </div>
+    </div>
+    <div class="corridor" id="corridor">
+      <div class="corridor__track" id="corridorTrack"></div>
+    </div>
+  </main>
+
+  <!-- ══════════════ 记账 ══════════════ -->
+  <main class="view ledger" id="view-ledger" role="tabpanel" hidden>
+    <div class="led__bar">
+      <button class="btn btn--flat btn--icon" id="ledPrev" aria-label="上个月">
+        <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 6-6 6 6 6"/></svg>
+      </button>
+      <div class="led__month" id="ledLabel">—</div>
+      <button class="btn btn--flat btn--icon" id="ledNext" aria-label="下个月">
+        <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m10 6 6 6-6 6"/></svg>
+      </button>
+      <button class="btn btn--flat" id="ledThisMonth" style="height:26px;font-size:12.5px">本月</button>
+      <span class="lbl" id="ledAllTime" style="margin-left:auto"></span>
+    </div>
+    <div class="sum">
+      <div class="sum__c"><div class="sum__n sum__n--in" id="sumIn">0</div><div class="sum__l lbl">本月收入</div></div>
+      <div class="sum__c"><div class="sum__n" id="sumEx">0</div><div class="sum__l lbl">本月支出</div></div>
+      <div class="sum__c"><div class="sum__n" id="sumBal">0</div><div class="sum__l lbl">本月结余</div></div>
+    </div>
+    <table class="led__table">
+      <thead><tr><th style="width:110px">日期</th><th>备注</th><th style="width:110px">来源</th><th class="num" style="width:110px">收入</th><th class="num" style="width:110px">支出</th><th style="width:36px"></th></tr></thead>
+      <tbody id="ledBody"></tbody>
+    </table>
+    <div class="led__form">
+      <div class="f"><span class="lbl">日期</span><input class="inp" type="date" id="ledDate"></div>
+      <div class="f"><span class="lbl">备注</span><input class="inp" id="ledNote" placeholder="例如：午饭" style="width:190px"></div>
+      <div class="f"><span class="lbl">收入</span><input class="inp inp--num" id="ledIn" type="number" step="0.01" value="0"></div>
+      <div class="f"><span class="lbl">支出</span><input class="inp inp--num" id="ledEx" type="number" step="0.01" value="0"></div>
+      <button class="btn btn--solid" id="ledAdd">记一笔</button>
+    </div>
+  </main>
+
+  <!-- ══════════════ 设置 ══════════════ -->
+  <main class="view settings" id="view-settings" role="tabpanel" hidden>
+    <section class="set">
+      <div class="set__row">
+        <div class="set__t"><strong>阅读器</strong><span>字号、行距与栏宽。留白越大越接近纸面阅读。</span></div>
+        <div class="set__c">
+          <span class="lbl">字号</span><input type="range" class="rng" id="setSize" min="14" max="26" step="1"><span class="rng__v" id="setSizeV"></span>
+          <span class="lbl">行距</span><input type="range" class="rng" id="setLh" min="1.4" max="2.6" step="0.05"><span class="rng__v" id="setLhV"></span>
+          <span class="lbl">栏宽</span><input type="range" class="rng" id="setWidth" min="620" max="1400" step="20"><span class="rng__v" id="setWidthV"></span>
+          <button class="btn" id="setSerif" aria-pressed="false">衬线正文</button>
+          <button class="btn" id="setReset">恢复默认</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="set">
+      <div class="set__row">
+        <div class="set__t"><strong>记账子系统</strong><span>关闭时顶栏不显示「记账」入口；写日记时仍可顺便记录当天收支。</span></div>
+        <div class="set__c"><button class="btn" id="setLedger" aria-pressed="false">在顶栏显示</button></div>
+      </div>
+    </section>
+
+    <section class="set">
+      <div class="set__row">
+        <div class="set__t"><strong>心情表情</strong><span>编辑日记时可一键选择当天心情，会显示在日历与标题栏。</span></div>
+        <div class="set__c"><input class="inp" id="setMoods" style="width:280px" placeholder="用空格分隔"></div>
+      </div>
+    </section>
+
+    <section class="set">
+      <div class="set__row">
+        <div class="set__t"><strong>日记模板</strong><span>新建日记时自动生成的小标题。可增加自定义栏目。</span></div>
+        <div class="set__c"><button class="btn" id="tplNew">新建模板</button></div>
+      </div>
+      <div class="tpl" id="tplList"></div>
+    </section>
+
+    <section class="set">
+      <div class="set__row">
+        <div class="set__t"><strong>纪念日</strong><span>在日历与时间线上以琥珀色描边特殊显示。</span></div>
+        <div class="set__c"><button class="btn" id="annivNew">添加纪念日</button></div>
+      </div>
+      <div class="tpl" id="annivList"></div>
+    </section>
+
+    <section class="set">
+      <div class="set__row">
+        <div class="set__t"><strong>版本与备份</strong><span>把整个日记目录提交到 Git，并推送到 GitHub 私有仓库。</span></div>
+        <div class="set__c">
+          <button class="btn" id="gitRefresh">刷新状态</button>
+          <button class="btn" id="gitCommit">提交</button>
+          <button class="btn btn--solid" id="gitPush">提交并推送</button>
+        </div>
+      </div>
+      <div id="gitInfo" style="margin-top:14px"></div>
+    </section>
+  </main>
+</div>
+
+<!-- ══════════════ 日期检索弹窗 ══════════════ -->
+<div class="modal" id="mPick" role="dialog" aria-modal="true" aria-labelledby="mPickT" hidden>
+  <div class="modal__scrim" data-close></div>
+  <div class="panel">
+    <div class="panel__head">
+      <div>
+        <div class="panel__title" id="mPickT">日期检索</div>
+        <div class="panel__sub" id="mPickS">—</div>
+      </div>
+      <button class="btn btn--flat btn--icon panel__x" data-close aria-label="关闭">
+        <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="panel__body">
+      <div class="pick__bar">
+        <button class="btn btn--flat btn--icon" id="pkPrevY" aria-label="上一年">
+          <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m11 6-6 6 6 6M18 6l-6 6 6 6"/></svg>
+        </button>
+        <button class="btn btn--flat btn--icon" id="pkPrev" aria-label="上个月">
+          <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 6-6 6 6 6"/></svg>
+        </button>
+        <div class="pick__label" id="pkLabel">—</div>
+        <button class="btn btn--flat btn--icon" id="pkNext" aria-label="下个月">
+          <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m10 6 6 6-6 6"/></svg>
+        </button>
+        <button class="btn btn--flat btn--icon" id="pkNextY" aria-label="下一年">
+          <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 6 6-6 6M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+      <div class="cal" style="gap:2px">
+        <span class="cal__dow">一</span><span class="cal__dow">二</span><span class="cal__dow">三</span>
+        <span class="cal__dow">四</span><span class="cal__dow">五</span><span class="cal__dow">六</span><span class="cal__dow">日</span>
+      </div>
+      <div class="pick__grid" id="pkGrid" style="margin-top:2px"></div>
+    </div>
+    <div class="panel__foot">
+      <span class="lbl">← → ↑ ↓ 移动 · Enter 打开 · Esc 关闭</span>
+      <span class="sp"></span>
+      <button class="btn" id="pkLatest">最新一篇</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ 编辑器弹窗 ══════════════ -->
+<div class="modal" id="mEdit" role="dialog" aria-modal="true" aria-labelledby="mEditT" hidden>
+  <div class="modal__scrim" data-close></div>
+  <div class="panel panel--wide">
+    <div class="panel__head">
+      <div>
+        <div class="panel__title" id="mEditT">写日记</div>
+        <div class="panel__sub" id="mEditS">—</div>
+      </div>
+      <button class="btn btn--flat btn--icon panel__x" data-close aria-label="关闭">
+        <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="panel__body">
+      <div class="ed__grid">
+        <div class="ed__main">
+          <div class="ed__field">
+            <span class="lbl">标题</span>
+            <input class="inp ed__title" id="edTitle" placeholder="给今天起个标题" autocomplete="off">
+          </div>
+          <div class="ed__field">
+            <span class="lbl">正文 · Markdown</span>
+            <div class="ed__tools" id="edTools"></div>
+            <textarea class="area ed__body" id="edBody" spellcheck="false" placeholder="支持 Markdown：**加粗**、<u>下划线</u>、- 列表、> 引用、![图](路径)"></textarea>
+          </div>
+        </div>
+        <div class="ed__side">
+          <div class="ed__field"><span class="lbl">日期</span><input class="inp" type="date" id="edDate"></div>
+          <div class="ed__field">
+            <span class="lbl">心情</span>
+            <div class="moods" id="edMoods"></div>
+          </div>
+          <div class="ed__field">
+            <span class="lbl">标签</span>
+            <div class="tags-edit">
+              <div class="tags-edit__list" id="edTags"></div>
+              <div class="insert-form">
+                <input class="inp" id="edTagInput" placeholder="加标签后回车" style="flex:1 1 auto;font-size:13px;padding:5px 8px">
+              </div>
+            </div>
+          </div>
+          <div class="ed__field">
+            <span class="lbl">纪念日</span>
+            <input class="inp" id="edAnniv" placeholder="留空则不是纪念日" style="font-size:13px">
+          </div>
+          <div class="ed__field">
+            <span class="lbl">当日收支</span>
+            <div class="insert-form">
+              <input class="inp inp--num" id="edIn" type="number" step="0.01" value="0" title="收入" style="width:100%;">
+            </div>
+            <div class="insert-form">
+              <input class="inp inp--num" id="edEx" type="number" step="0.01" value="0" title="支出" style="width:100%;">
+            </div>
+            <span class="lbl" id="edMoneyHint">默认 0，不计入账本</span>
+          </div>
+          <div class="ed__field">
+            <span class="lbl">套用模板</span>
+            <div class="secpicker" id="edTpl"></div>
+          </div>
+          <div class="ed__field" id="edTimeBox">
+            <span class="lbl">时间</span>
+            <span class="panel__sub" id="edTimes">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel__foot">
+      <button class="btn btn--accent" id="edSave">保存</button>
+      <button class="btn" id="edPreview">预览</button>
+      <span class="sp"></span>
+      <span class="lbl" id="edHint">Ctrl+S 保存 · Esc 关闭</span>
+      <button class="btn" id="edDelete" hidden>删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ 预览弹窗 ══════════════ -->
+<div class="modal" id="mPreview" role="dialog" aria-modal="true" hidden>
+  <div class="modal__scrim" data-close></div>
+  <div class="panel panel--wide">
+    <div class="panel__head">
+      <div class="panel__title">预览</div>
+      <button class="btn btn--flat btn--icon panel__x" data-close aria-label="关闭">
+        <svg class="btn__i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="panel__body"><div class="doc" id="pvBody"></div></div>
+  </div>
+</div>
+
+<!-- ══════════════ 通用输入弹窗 ══════════════ -->
+<div class="modal" id="mPrompt" role="dialog" aria-modal="true" hidden>
+  <div class="modal__scrim" data-close></div>
+  <div class="panel" style="width:min(440px,100%)">
+    <div class="panel__head"><div class="panel__title" id="prT">输入</div></div>
+    <div class="panel__body" id="prBody"></div>
+    <div class="panel__foot">
+      <button class="btn btn--solid" id="prOk">确定</button>
+      <button class="btn" data-close>取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-host" id="toastHost"></div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════════
+   0. 工具
+   ══════════════════════════════════════════════════════════════════════════ */
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const pad2 = n => String(n).padStart(2, "0");
+const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const parseYmd = s => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
+const dayCount = (y, m) => new Date(y, m + 1, 0).getDate();
+const DOW = ["一", "二", "三", "四", "五", "六", "日"];
+const WEEK = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+const TODAY = ymd(new Date());
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = n => (Math.round(Number(n) * 100) / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const weekdayOf = s => WEEK[parseYmd(s).getDay()];
+
+function toast(msg, ms = 2200) {
+  const host = $("#toastHost");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("on"));
+  setTimeout(() => {
+    el.classList.remove("on");
+    setTimeout(() => el.remove(), 220);
+  }, ms);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   1. Markdown
+   —— 保留行内 HTML（用户要用 <u> 下划线），支持 ++下划线++ 写法
+   ══════════════════════════════════════════════════════════════════════════ */
+const md = (() => {
+  const INLINE_TAGS = new Set(["u", "b", "i", "s", "mark", "sub", "sup", "kbd", "br", "span", "small", "big", "em", "strong", "del", "ins"]);
+
+  /** 把行内 HTML 抽出来占位，避免被转义；只放行白名单标签 */
+  function protectHtml(src) {
+    const kept = [];
+    const s = src.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)(\s[^<>]*)?\/?>/g, (m, tag) => {
+      if (!INLINE_TAGS.has(tag.toLowerCase())) return m;
+      kept.push(m);
+      return `\u0000H${kept.length - 1}\u0000`;
+    });
+    return { s, kept };
+  }
+
+  function inline(src) {
+    let s = String(src);
+    const codes = [];
+    s = s.replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\u0000C${codes.length - 1}\u0000`; });
+
+    const { s: s2, kept } = protectHtml(s);
+    s = esc(s2);
+
+    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+      (_, alt, src2, title) => `<img src="${src2}" alt="${alt}"${title ? ` title="${title}"` : ""} loading="lazy">`);
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    s = s.replace(/\*\*([^\n]+?)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[^*\w])\*(?=\S)([^*\n]*?\S)\*(?!\*)/g, "$1<em>$2</em>");
+    s = s.replace(/__([^\n_]+?)__/g, "<strong>$1</strong>");
+    s = s.replace(/\+\+([^\n]+?)\+\+/g, "<u>$1</u>");
+    s = s.replace(/~~(?=\S)([^\n]*?\S)~~/g, "<del>$1</del>");
+    s = s.replace(/==(?=\S)([^\n]*?\S)==/g, "<mark>$1</mark>");
+
+    s = s.replace(/\u0000C(\d+)\u0000/g, (_, i) => `<code>${esc(codes[+i])}</code>`);
+    s = s.replace(/\u0000H(\d+)\u0000/g, (_, i) => kept[+i]);
+    return s;
+  }
+
+  function render(src) {
+    const lines = String(src == null ? "" : src).replace(/\r\n?/g, "\n").split("\n");
+    const out = [];
+    let i = 0, para = [], list = null, fence = null, fbuf = [], tbl = null;
+
+    const fp = () => { if (para.length) { out.push("<p>" + inline(para.join("<br>")) + "</p>"); para = []; } };
+    const fl = () => {
+      if (list) { out.push(`<${list.tag}>` + list.items.map(t => `<li>${t}</li>`).join("") + `</${list.tag}>`); list = null; }
+    };
+    const ft = () => {
+      if (tbl) {
+        const head = tbl.rows[0] ? `<thead><tr>${tbl.rows[0].map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : "";
+        const body = tbl.rows.slice(1).map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join("")}</tr>`).join("");
+        out.push(`<table>${head}<tbody>${body}</tbody></table>`);
+        tbl = null;
+      }
+    };
+    const fa = () => { fp(); fl(); ft(); };
+
+    for (; i < lines.length; i++) {
+      const raw = lines[i];
+      const line = raw.replace(/\s+$/, "");
+
+      if (/^(```|~~~)/.test(line)) {
+        if (fence) { out.push("<pre><code>" + esc(fbuf.join("\n")) + "</code></pre>"); fence = null; fbuf = []; }
+        else { fa(); fence = line.slice(0, 3); }
+        continue;
+      }
+      if (fence) { fbuf.push(raw); continue; }
+
+      if (!line.trim()) { fa(); continue; }
+
+      const h = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (h) { fa(); const n = h[1].length; out.push(`<h${n}>${inline(h[2])}</h${n}>`); continue; }
+
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())) { fa(); out.push("<hr>"); continue; }
+
+      const q = /^>\s?(.*)$/.exec(line);
+      if (q) { fp(); fl(); ft(); const inner = inline(q[1]); out.push(`<blockquote><p>${inner}</p></blockquote>`); continue; }
+
+      // 表格
+      if (line.includes("|") && lines[i + 1] && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1]) && /-/.test(lines[i + 1])) {
+        fa();
+        tbl = { rows: [line.replace(/^\s*\||\|\s*$/g, "").split("|").map(s => s.trim())] };
+        i++;
+        while (i + 1 < lines.length && lines[i + 1].includes("|") && lines[i + 1].trim()) {
+          i++;
+          tbl.rows.push(lines[i].replace(/^\s*\||\|\s*$/g, "").split("|").map(s => s.trim()));
+        }
+        ft();
+        continue;
+      }
+
+      const ul = /^[-*+]\s+(.*)$/.exec(line);
+      const ol = /^\d+[.)]\s+(.*)$/.exec(line);
+      if (ul || ol) {
+        fp(); ft();
+        const tag = ul ? "ul" : "ol";
+        if (!list || list.tag !== tag) { fl(); list = { tag, items: [] }; }
+        list.items.push(inline((ul || ol)[1]));
+        continue;
+      }
+
+      fp(); fl(); ft();
+      para.push(line);
+    }
+    if (fence && fbuf.length) out.push("<pre><code>" + esc(fbuf.join("\n")) + "</code></pre>");
+    fa();
+    return out.join("\n");
+  }
+  return { render };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2. 状态与存储
+   ══════════════════════════════════════════════════════════════════════════ */
+const S = {
+  entries: [],            // 摘要列表（不含正文）
+  byDate: new Map(),
+  anniversaries: [],
+  templates: [],
+  moods: [],
+  reader: { fontSize: 18, lineHeight: 1.9, width: 960, serif: false },
+  ledgerEnabled: false,
+  current: null,          // 当前正文对象（含 body）
+  currentDate: "",
+  sideY: 0, sideM: 1,
+  pickY: 0, pickM: 1, pickCursor: "",
+  ledY: 0, ledM: 1,
+  ledger: { records: [] },
+  nav: "diary",
+  online: false,
+  editing: null,
+  annivFilter: null
+};
+
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem("diary." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("diary." + k, JSON.stringify(v)); } catch { /* ignore */ } }
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   3. API
+   ══════════════════════════════════════════════════════════════════════════ */
+const API = {
+  async req(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      headers: body ? { "content-type": "application/json; charset=utf-8" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      cache: "no-store"
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch { /* 非 JSON */ }
+    if (!res.ok) {
+      const err = new Error((json && json.error) || `HTTP ${res.status}`);
+      err.status = res.status;
+      err.payload = json;
+      throw err;
+    }
+    return json;
+  },
+  list()        { return this.req("GET", "/api/entries"); },
+  get(date)     { return this.req("GET", "/api/entries/" + date); },
+  create(date, e) { return this.req("POST", "/api/entries/" + date, e); },
+  update(date, e) { return this.req("PUT", "/api/entries/" + date, e); },
+  remove(date)  { return this.req("DELETE", "/api/entries/" + date); },
+  upload(payload) { return this.req("POST", "/api/upload", payload); },
+  config()      { return this.req("GET", "/api/config"); },
+  saveConfig(p) { return this.req("PUT", "/api/config", p); },
+  ledger()      { return this.req("GET", "/api/ledger"); },
+  saveLedger(p) { return this.req("PUT", "/api/ledger", p); },
+  gitStatus()   { return this.req("GET", "/api/git/status"); },
+  gitCommit(msg) { return this.req("POST", "/api/git/commit", { message: msg }); },
+  gitPush()     { return this.req("POST", "/api/git/push", {}); }
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   4. 纪念日
+   ══════════════════════════════════════════════════════════════════════════ */
+function annivOn(dateStr) {
+  const d = parseYmd(dateStr);
+  const out = [];
+  for (const a of S.anniversaries) {
+    if (!a || !a.date) continue;
+    const ad = parseYmd(a.date);
+    if (a.repeat === "monthly") { if (ad.getDate() === d.getDate()) out.push(a); }
+    else if (a.repeat === "yearly") { if (ad.getMonth() === d.getMonth() && ad.getDate() === d.getDate()) out.push(a); }
+    else if (a.date === dateStr) out.push(a);
+  }
+  return out;
+}
+const hashAnniv = new Set();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   5. 渲染：侧栏
+   ══════════════════════════════════════════════════════════════════════════ */
+function renderSideCal() {
+  const y = S.sideY, m = S.sideM;
+  $("#calLabel").textContent = `${y}-${pad2(m)}`;
+  const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const n = dayCount(y, m - 1);
+  const cells = DOW.map(d => `<span class="cal__dow">${d}</span>`);
+  for (let k = 0; k < offset; k++) cells.push('<span class="cal__c is-blank"></span>');
+  for (let d = 1; d <= n; d++) {
+    const key = `${y}-${pad2(m)}-${pad2(d)}`;
+    const e = S.byDate.get(key);
+    const an = annivOn(key);
+    const cls = ["cal__c"];
+    cls.push(e ? "has" : "no");
+    if (key === TODAY) cls.push("today");
+    if (key === S.currentDate) cls.push("cur");
+    if (an.length) cls.push("anniv");
+    const mo = e && e.mood ? `<span class="mo">${esc(e.mood)}</span>` : "";
+    const title = [key, e ? e.title || "有日记" : "无记录", ...an.map(a => "◆ " + a.title)].join(" · ");
+    cells.push(`<button class="${cls.join(" ")}" data-scal="${key}" title="${esc(title)}">${d}${mo}</button>`);
+  }
+  $("#sideCal").innerHTML = cells.join("");
+}
+
+function renderSideArch() {
+  const map = new Map();
+  for (const e of S.entries) {
+    const k = e.date.slice(0, 7);
+    map.set(k, (map.get(k) || 0) + 1);
+  }
+  const keys = [...map.keys()].sort().reverse();
+  $("#archTotal").textContent = S.entries.length + " 篇";
+  if (!keys.length) { $("#sideArch").innerHTML = '<div class="empty-note">还没有日记</div>'; return; }
+  const max = Math.max(...keys.map(k => map.get(k)));
+  $("#sideArch").innerHTML = keys.slice(0, 40).map(k => {
+    const [y, m] = k.split("-");
+    const c = map.get(k);
+    return `<button class="arch__row" data-arch="${k}">
+      <span class="arch__bar" style="width:${4 + Math.round(c / max * 18)}px"></span>
+      <span>${y} 年 ${+m} 月</span>
+      <span class="arch__n">${c}</span>
+    </button>`;
+  }).join("");
+}
+
+function renderSideAnniv() {
+  const list = [...S.anniversaries].sort((a, b) => {
+    const key = x => { const d = parseYmd(x.date); const t = new Date(2000, d.getMonth(), d.getDate()); return t; };
+    return key(a) - key(b);
+  });
+  if (!list.length) {
+    $("#sideAnniv").innerHTML = '<div class="empty-note">还没有纪念日<br>点上方 + 添加</div>';
+    return;
+  }
+  $("#sideAnniv").innerHTML = list.map(a => {
+    const d = parseYmd(a.date);
+    const label = a.repeat === "yearly" ? `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+      : a.repeat === "monthly" ? `每月 ${pad2(d.getDate())} 日`
+      : a.date;
+    return `<button class="anniv__row" data-anniv="${esc(a.id)}" title="${esc(a.title)}">
+      <span class="anniv__n">◆</span>
+      <span class="anniv__t">${esc(a.title)}</span>
+      <span class="anniv__d">${label}</span>
+    </button>`;
+  }).join("");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6. 渲染：日记阅读区
+   ══════════════════════════════════════════════════════════════════════════ */
+function renderReader() {
+  const box = $("#reader");
+  const cur = S.current;
+
+  if (!cur) {
+    const hasAny = S.entries.length > 0;
+    box.innerHTML = `<div class="blank">
+      <div class="blank__t">${hasAny ? "选择一天开始阅读" : "还没有任何日记"}</div>
+      <div class="blank__s">
+        ${hasAny
+          ? "左侧日历点日期即可切换，有记录的日期是深色的。<br>也可以按 Ctrl+K 检索，或按 Ctrl+N 写今天的日记。"
+          : "点右上角「写日记」开始第一篇。<br>左侧日历没有记录的日期是灰的。"}
+      </div>
+    </div>`;
+    return;
+  }
+
+  const an = annivOn(cur.date);
+  const idx = S.entries.findIndex(e => e.date === cur.date);
+  const prev = S.entries[idx + 1];
+  const next = S.entries[idx - 1];
+  const mood = cur.mood ? `<span class="masthead__mood">${esc(cur.mood)}</span>` : "";
+  const tags = (cur.tags || []).map(t => `<span class="tagpill">${esc(t)}</span>`).join(" ");
+
+  box.innerHTML = `
+    <div class="masthead">
+      <div class="masthead__top">
+        <span class="masthead__date">${cur.date} · ${weekdayOf(cur.date)}</span>
+        <span class="masthead__sep"></span>
+        ${mood}
+      </div>
+      <h1 class="masthead__title">${esc(cur.title || cur.date)}</h1>
+      <div class="masthead__meta">
+        <span>${cur.words} 字</span>
+        <span class="dot"></span>
+        <span>写于 ${fmtTime(cur.created)}</span>
+        ${cur.updated && cur.updated !== cur.created ? `<span class="dot"></span><span>改于 ${fmtTime(cur.updated)}</span>` : ""}
+        ${tags ? `<span class="dot"></span>${tags}` : ""}
+        ${(cur.income || cur.expense) ? `<span class="dot"></span><span>收 ${num(cur.income)} · 支 ${num(cur.expense)}</span>` : ""}
+      </div>
+      ${an.length ? `<div class="masthead__anniv">◆ 纪念日 · ${an.map(a => esc(a.title)).join("、")}</div>` : ""}
+    </div>
+    <article class="doc">${md.render(cur.body)}</article>
+    <div class="daynav">
+      ${prev ? `<button class="btn" data-go="${prev.date}">← ${prev.date}</button>` : ""}
+      <button class="btn" id="dayEdit">编辑这篇</button>
+      ${next ? `<button class="btn" data-go="${next.date}">${next.date} →</button>` : ""}
+      <span class="daynav__sp"></span>
+      <span class="daynav__info">${idx >= 0 ? `第 ${S.entries.length - idx} / ${S.entries.length} 篇` : ""}</span>
+    </div>`;
+}
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   7. 渲染：时间线走廊
+   ══════════════════════════════════════════════════════════════════════════ */
+let tlZoom = Number(LS.get("tlZoom", 2)) || 2;
+
+function renderTimeline() {
+  const track = $("#corridorTrack");
+  if (!S.entries.length) { track.innerHTML = '<div class="empty-note">还没有日记，时间线是空的</div>'; return; }
+
+  const years = [...new Set(S.entries.map(e => e.date.slice(0, 4)))].sort().reverse();
+  // 缩放：每个日期单元的宽度
+  const cw = [26, 46, 78, 128][tlZoom - 1] || 46;
+  const showKeyword = tlZoom >= 3;
+
+  const rows = [];
+  for (const y of years) {
+    // 月份刻度行：走廊很长，必须随时能看出当前是哪个月
+    const kW = showKeyword ? cw * 4 : cw;
+    const mCells = [];
+    for (let m = 1; m <= 12; m++) {
+      const days = dayCount(+y, m - 1);
+      mCells.push(`<div class="tl__mcell" style="width:${days * cw}px"><span>${pad2(m)}${showKeyword ? " 月" : ""}</span></div>`);
+    }
+    rows.push(`<div class="tlrow tlrow--months"><div class="tlrow__label"></div><div class="tl__months">${mCells.join("")}</div></div>`);
+
+    // 年份行：有记录的日期一个块；块宽按缩放，间隔按真实天数
+    const es = S.entries.filter(e => e.date.startsWith(y)).sort((a, b) => (a.date < b.date ? -1 : 1));
+    const cells = [];
+    let cursor = new Date(+y, 0, 1);
+    for (const e of es) {
+      const d = parseYmd(e.date);
+      const gapDays = Math.round((d - cursor) / 86400000);
+      if (gapDays > 0) cells.push(`<div class="tlcell tlcell--gap" style="width:${gapDays * cw}px"></div>`);
+      const w = Math.max(kW, showKeyword && e.keyword ? kW : cw);
+      const an = annivOn(e.date);
+      const cls = ["tlcell", "has"];
+      if (e.date === S.currentDate) cls.push("cur");
+      if (an.length) cls.push("anniv");
+      if (e.date === TODAY) cls.push("today");
+      const md = showKeyword ? `<span class="md">${+e.date.slice(5, 7)}/${+e.date.slice(8)}</span>` : "";
+      const inner = `${md}${e.mood ? `<span class="mo">${esc(e.mood)}</span>` : ""}` +
+        (showKeyword
+          ? `<span class="k">${esc(e.keyword || e.title || "")}</span>`
+          : `<span>${+e.date.slice(8)}</span>`);
+      const title = `${e.date} ${weekdayOf(e.date)} · ${e.title || e.keyword || ""}${an.length ? " · ◆ " + an.map(a => a.title).join("、") : ""}`;
+      cells.push(`<button class="${cls.join(" ")}" style="width:${w}px" data-tl="${e.date}" title="${esc(title)}">${inner}</button>`);
+      cursor = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    }
+    const restDays = Math.round((new Date(+y, 11, 31) - cursor) / 86400000) + 1;
+    if (restDays > 0) cells.push(`<div class="tlcell tlcell--gap" style="width:${restDays * cw}px"></div>`);
+
+    rows.push(`<div class="tlrow tlrow--year"><div class="tlrow__label">${y}</div><div class="tlrow__cells">${cells.join("")}</div></div>`);
+  }
+  track.innerHTML = rows.join("");
+  requestAnimationFrame(() => centerTimelineOnCurrent());
+}
+
+function centerTimelineOnCurrent() {
+  const el = $(`#corridorTrack .tlcell[data-tl="${S.currentDate}"]`);
+  if (!el) return;
+  const box = $("#corridor");
+  const target = el.offsetLeft - box.clientWidth / 2 + el.offsetWidth / 2;
+  box.scrollLeft = Math.max(0, target);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   8. 渲染：记账
+   ══════════════════════════════════════════════════════════════════════════ */
+function renderLedger() {
+  const y = S.ledY, m = S.ledM;
+  $("#ledLabel").textContent = `${y}-${pad2(m)}`;
+  const prefix = `${y}-${pad2(m)}`;
+  const rows = (S.ledger.records || []).filter(r => String(r.date).startsWith(prefix))
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const sumIn = rows.reduce((a, r) => a + (Number(r.income) || 0), 0);
+  const sumEx = rows.reduce((a, r) => a + (Number(r.expense) || 0), 0);
+  $("#sumIn").textContent = num(sumIn);
+  $("#sumEx").textContent = num(sumEx);
+  $("#sumBal").textContent = num(sumIn - sumEx);
+
+  const allIn = (S.ledger.records || []).reduce((a, r) => a + (Number(r.income) || 0), 0);
+  const allEx = (S.ledger.records || []).reduce((a, r) => a + (Number(r.expense) || 0), 0);
+  $("#ledAllTime").textContent = `累计 收 ${num(allIn)} · 支 ${num(allEx)} · 余 ${num(allIn - allEx)}`;
+
+  if (!rows.length) {
+    $("#ledBody").innerHTML = '<tr><td colspan="6" style="padding:26px 11px;color:var(--ink-4)">这个月还没有账目。写日记时填当日收支，或在下方直接记一笔。</td></tr>';
+    return;
+  }
+  $("#ledBody").innerHTML = rows.map(r => `
+    <tr>
+      <td class="mono">${esc(r.date)}</td>
+      <td>${esc(r.note || "")}${r.category ? ` <span class="tagpill">${esc(r.category)}</span>` : ""}</td>
+      <td><span class="tagpill">${r.kind === "diary" ? "日记同步" : "手动"}</span></td>
+      <td class="num in">${r.income ? num(r.income) : ""}</td>
+      <td class="num ex">${r.expense ? num(r.expense) : ""}</td>
+      <td class="num"><button class="btn btn--flat btn--icon" data-leddel="${esc(r.id)}" title="删除" style="width:24px;height:24px">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button></td>
+    </tr>`).join("");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   9. 渲染：设置
+   ══════════════════════════════════════════════════════════════════════════ */
+function renderSettings() {
+  const r = S.reader;
+  $("#setSize").value = r.fontSize; $("#setSizeV").textContent = r.fontSize + "px";
+  $("#setLh").value = r.lineHeight; $("#setLhV").textContent = Number(r.lineHeight).toFixed(2);
+  $("#setWidth").value = r.width; $("#setWidthV").textContent = r.width + "px";
+  $("#setSerif").setAttribute("aria-pressed", r.serif ? "true" : "false");
+  $("#setLedger").setAttribute("aria-pressed", S.ledgerEnabled ? "true" : "false");
+  $("#setLedger").textContent = S.ledgerEnabled ? "已在顶栏显示" : "在顶栏显示";
+  $("#setMoods").value = S.moods.join(" ");
+
+  $("#tplList").innerHTML = S.templates.map(t => `
+    <div class="tpl__row" data-tplrow="${esc(t.id)}">
+      <input class="inp tpl__name" value="${esc(t.name)}" data-tplname="${esc(t.id)}" style="width:170px;padding:5px 8px;font-size:13.5px">
+      <div class="tpl__secs">${t.sections.map(s => `<span class="tagpill">${esc(s)}</span>`).join("")}</div>
+      <button class="btn" data-tpledit="${esc(t.id)}" style="height:26px;font-size:12.5px">编辑栏目</button>
+      ${t.builtin ? "" : `<button class="btn btn--flat btn--icon" data-tpldel="${esc(t.id)}" style="width:26px;height:26px" title="删除">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`}
+    </div>`).join("");
+
+  $("#annivList").innerHTML = S.anniversaries.length
+    ? S.anniversaries.map(a => `
+      <div class="tpl__row">
+        <span class="anniv__n">◆</span>
+        <input class="inp" value="${esc(a.title)}" data-anntitle="${esc(a.id)}" style="width:190px;padding:5px 8px;font-size:13.5px">
+        <input class="inp" type="date" value="${esc(a.date)}" data-anndate="${esc(a.id)}" style="padding:5px 8px;font-size:13px">
+        <select class="sel" data-annrep="${esc(a.id)}" style="padding:5px 8px;font-size:13px">
+          <option value="yearly"${a.repeat === "yearly" ? " selected" : ""}>每年</option>
+          <option value="monthly"${a.repeat === "monthly" ? " selected" : ""}>每月</option>
+          <option value="once"${a.repeat === "once" ? " selected" : ""}>仅一次</option>
+        </select>
+        <span class="sp" style="flex:1 1 auto"></span>
+        <button class="btn btn--flat btn--icon" data-anndel="${esc(a.id)}" style="width:26px;height:26px" title="删除">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>`).join("")
+    : '<div class="empty-note">还没有纪念日</div>';
+}
+
+function applyReader() {
+  const r = S.reader;
+  const root = document.documentElement;
+  root.style.setProperty("--read-size", r.fontSize + "px");
+  root.style.setProperty("--read-lh", String(r.lineHeight));
+  root.style.setProperty("--read-width", r.width + "px");
+  root.style.setProperty("--read-font", r.serif ? "var(--serif)" : "var(--sans)");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   10. 导航与加载
+   ══════════════════════════════════════════════════════════════════════════ */
+function setNav(name) {
+  S.nav = name;
+  $$(".tab").forEach(t => t.setAttribute("aria-selected", t.dataset.nav === name ? "true" : "false"));
+  for (const v of ["diary", "timeline", "ledger", "settings"]) {
+    const el = $("#view-" + v);
+    if (el) el.hidden = v !== name;
+  }
+  if (name === "ledger") renderLedger();
+  if (name === "settings") { renderSettings(); renderGit(); }
+  if (name === "timeline") renderTimeline();
+  if (name === "diary") renderReader();
+  location.hash = "#" + name;
+}
+
+async function openEntry(date, { silent = false } = {}) {
+  if (!date) return;
+  if (!S.byDate.has(date) && !silent) {
+    const an = annivOn(date);
+    toast(an.length ? `${date} 没有日记（有纪念日：${an.map(a => a.title).join("、")}）` : `${date} 没有日记`);
+    return false;
+  }
+  try {
+    S.current = await API.get(date);
+    S.currentDate = date;
+  } catch (err) {
+    S.current = null;
+    S.currentDate = date;
+    if (!silent) toast(err.message);
+  }
+  const d = parseYmd(date);
+  S.sideY = d.getFullYear(); S.sideM = d.getMonth() + 1;
+  renderSideCal();
+  if (S.nav !== "diary") setNav("diary"); else renderReader();
+  $("#view-diary").scrollTop = 0;
+  return true;
+}
+
+async function reloadAll() {
+  const [list, cfg] = await Promise.all([API.list(), API.config()]);
+  S.entries = list.entries || [];
+  S.byDate = new Map(S.entries.map(e => [e.date, e]));
+  // 当前游标指向的日记如果已经不存在（被删除 / 被外部改），就清空
+  if (S.currentDate && !S.byDate.has(S.currentDate)) { S.current = null; S.currentDate = ""; }
+  S.anniversaries = cfg.anniversaries || [];
+  S.templates = cfg.templates || [];
+  S.moods = cfg.moods || [];
+  S.reader = { ...S.reader, ...(cfg.reader || {}) };
+  S.ledgerEnabled = !!cfg.ledgerEnabled;
+  applyReader();
+  $("#srcLine").textContent = `${S.entries.length} 篇 · 本地`;
+  $('.tab[data-nav="ledger"]').hidden = !S.ledgerEnabled;
+  renderSideCal(); renderSideArch(); renderSideAnniv();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   11. 日期检索弹窗
+   ══════════════════════════════════════════════════════════════════════════ */
+function renderPicker() {
+  const y = S.pickY, m = S.pickM;
+  $("#pkLabel").textContent = `${y} 年 ${m} 月`;
+  const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const n = dayCount(y, m - 1);
+  const cells = [];
+  for (let k = 0; k < offset; k++) cells.push('<span class="pick__c is-blank"></span>');
+  for (let d = 1; d <= n; d++) {
+    const key = `${y}-${pad2(m)}-${pad2(d)}`;
+    const e = S.byDate.get(key);
+    const an = annivOn(key);
+    const cls = ["pick__c", e ? "has" : "no"];
+    if (key === TODAY) cls.push("today");
+    if (key === S.currentDate) cls.push("cur");
+    if (key === S.pickCursor) cls.push("cursor");
+    if (an.length) cls.push("anniv");
+    cells.push(`<button class="${cls.join(" ")}" data-pk="${key}" ${e ? "" : 'aria-disabled="true"'} title="${esc(key + (e ? " · " + (e.title || "有日记") : " · 无记录") + (an.length ? " · ◆" + an.map(a => a.title).join("、") : ""))}">${d}${e && e.mood ? `<span class="mo">${esc(e.mood)}</span>` : ""}</button>`);
+  }
+  $("#pkGrid").innerHTML = cells.join("");
+  const cnt = S.entries.filter(e => e.date.startsWith(`${y}-${pad2(m)}`)).length;
+  $("#mPickS").textContent = `${y} 年 ${m} 月 · ${cnt} 篇 · 灰色日期无记录`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   12. 弹窗基类
+   ══════════════════════════════════════════════════════════════════════════ */
+const Modal = (() => {
+  const stack = [];
+  function open(id) {
+    const el = document.getElementById(id);
+    if (!el || !el.hidden) return el;
+    el.hidden = false;
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("open")));
+    stack.push(id);
+    return el;
+  }
+  function close(id) {
+    const el = document.getElementById(id || stack[stack.length - 1]);
+    if (!el || el.hidden) return;
+    el.classList.remove("open");
+    setTimeout(() => { el.hidden = true; }, 180);
+    const i = stack.indexOf(el.id);
+    if (i >= 0) stack.splice(i, 1);
+  }
+  const top = () => stack[stack.length - 1] || null;
+  const isOpen = () => stack.length > 0;
+  return { open, close, top, isOpen };
+})();
+
+/* 通用输入弹窗：fields = [{key,label,type,value,placeholder}] → resolve(values) */
+function ask(title, fields) {
+  return new Promise(resolve => {
+    $("#prT").textContent = title;
+    $("#prBody").innerHTML = fields.map((f, i) => `
+      <div class="ed__field" style="margin-bottom:12px">
+        <span class="lbl">${esc(f.label)}</span>
+        ${f.type === "textarea"
+          ? `<textarea class="area" data-pf="${i}" rows="4" placeholder="${esc(f.placeholder || "")}">${esc(f.value || "")}</textarea>`
+          : `<input class="inp" data-pf="${i}" type="${f.type || "text"}" value="${esc(f.value == null ? "" : f.value)}" placeholder="${esc(f.placeholder || "")}">`}
+      </div>`).join("");
+    const done = vals => { Modal.close("mPrompt"); $("#prOk").onclick = null; resolve(vals); };
+    $("#prOk").onclick = () => {
+      const vals = {};
+      $$("#prBody [data-pf]").forEach((el, i) => { vals[fields[i].key] = el.value.trim(); });
+      done(vals);
+    };
+    Modal.open("mPrompt");
+    setTimeout(() => { const f = $('#prBody [data-pf]'); if (f) f.focus(); }, 60);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   13. 编辑器
+   ══════════════════════════════════════════════════════════════════════════ */
+const Ed = {
+  tags: [], mood: "", tplId: null, checksum: null, isNew: true, created: null, updated: null, date: "",
+
+  open(entry, date) {
+    S.editing = entry ? entry.date : date;
+    const e = entry || null;
+    this.isNew = !e;
+    this.checksum = e ? e.checksum : null;
+    this.created = e ? e.created : null;
+    this.updated = e ? e.updated : null;
+    this.date = e ? e.date : date;
+    this.tags = e ? [...(e.tags || [])] : [];
+    this.mood = e ? e.mood || "" : "";
+
+    $("#mEditT").textContent = this.isNew ? "写日记" : "编辑日记";
+    $("#edDate").value = this.date;
+    $("#edTitle").value = e ? e.title || "" : "";
+    $("#edBody").value = e ? e.body || "" : "";
+    $("#edAnniv").value = e ? e.anniversary || "" : "";
+    $("#edIn").value = e ? (e.income || 0) : 0;
+    $("#edEx").value = e ? (e.expense || 0) : 0;
+    $("#edDelete").hidden = this.isNew;
+    this.renderTags(); this.renderMoods(); this.renderTemplates(); this.updateHint();
+
+    if (this.isNew && !$("#edBody").value) {
+      const t = S.templates.find(x => x.builtin) || S.templates[0];
+      if (t) this.applyTemplate(t, false);
+    }
+    Modal.open("mEdit");
+    setTimeout(() => { ($("#edTitle").value ? $("#edBody") : $("#edTitle")).focus(); }, 80);
+  },
+
+  renderTags() {
+    $("#edTags").innerHTML = this.tags.map((t, i) =>
+      `<span class="tage">${esc(t)}<button data-tagrm="${i}" title="移除">×</button></span>`).join("")
+      || '<span class="lbl">暂无标签</span>';
+  },
+  renderMoods() {
+    $("#edMoods").innerHTML = S.moods.map(m =>
+      `<button class="mood" data-mood="${esc(m)}" aria-pressed="${m === this.mood ? "true" : "false"}" title="${esc(m)}">${esc(m)}</button>`).join("");
+  },
+  renderTemplates() {
+    $("#edTpl").innerHTML = S.templates.map(t =>
+      `<button class="btn" data-tpl="${esc(t.id)}">${esc(t.name)}</button>`).join("");
+  },
+  applyTemplate(t, append = true) {
+    const body = t.sections.map(s => `## ${s}\n\n`).join("\n");
+    const ta = $("#edBody");
+    if (append && ta.value.trim()) ta.value = ta.value.replace(/\s+$/, "") + "\n\n" + body;
+    else ta.value = body;
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  },
+  updateHint() {
+    const t = this.isNew
+      ? "保存后自动记录创建时间"
+      : `创建 ${fmtTime(this.created)} · 上次修改 ${fmtTime(this.updated)}`;
+    $("#edTimes").textContent = t;
+    const inc = Number($("#edIn").value) || 0, exp = Number($("#edEx").value) || 0;
+    $("#edMoneyHint").textContent = (inc || exp) ? `将写入账本：收 ${num(inc)} · 支 ${num(exp)}` : "默认 0，不计入账本";
+  },
+
+  /** 在光标处包裹 / 插入 */
+  wrap(before, after = before, placeholder = "") {
+    const ta = $("#edBody");
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const sel = ta.value.slice(s, e) || placeholder;
+    ta.setRangeText(before + sel + after, s, e, "end");
+    if (!ta.value.slice(s + before.length, s + before.length + sel.length)) { /* noop */ }
+    if (s === e) ta.setSelectionRange(s + before.length, s + before.length + sel.length);
+    ta.focus();
+  },
+  line(prefix) {
+    const ta = $("#edBody");
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const from = ta.value.lastIndexOf("\n", s - 1) + 1;
+    const to = e + (ta.value.indexOf("\n", e) === -1 ? 0 : 0);
+    const block = ta.value.slice(from, Math.max(to, e));
+    const lines = block.split("\n");
+    const allHave = lines.every(l => l.startsWith(prefix));
+    const next = lines.map(l => allHave ? l.slice(prefix.length) : prefix + l).join("\n");
+    ta.setRangeText(next, from, Math.max(to, e), "end");
+    ta.focus();
+  },
+  insert(text) {
+    const ta = $("#edBody");
+    const s = ta.selectionStart;
+    ta.setRangeText(text, s, ta.selectionEnd, "end");
+    ta.focus();
+  },
+
+  async save() {
+    const date = $("#edDate").value || this.date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast("日期不合法"); return; }
+    const payload = {
+      title: $("#edTitle").value.trim(),
+      tags: this.tags,
+      mood: this.mood,
+      anniversary: $("#edAnniv").value.trim(),
+      body: $("#edBody").value,
+      income: Number($("#edIn").value) || 0,
+      expense: Number($("#edEx").value) || 0,
+      checksum: this.isNew ? null : this.checksum
+    };
+    try {
+      const r = this.isNew ? await API.create(date, payload) : await API.update(date, payload);
+      Modal.close("mEdit");
+      await reloadAll();
+      await openEntry(date, { silent: true });
+      if (S.ledgerEnabled) { S.ledger = await API.ledger(); }
+      toast(this.isNew ? "已保存新日记" : "已保存修改");
+    } catch (err) {
+      if (err.status === 409) toast("文件在别处被修改了，已为你重新载入，请再保存一次", 3600);
+      else toast("保存失败：" + err.message, 3600);
+    }
+  },
+
+  async del() {
+    if (this.isNew) return;
+    if (!confirm(`确定删除 ${this.date} 的日记？此操作不可撤销。`)) return;
+    try {
+      const gone = this.date;
+      await API.remove(gone);
+      Modal.close("mEdit");
+      await reloadAll();
+      // 删掉的正好是正在读的那篇：游标要一起清掉，
+      // 否则日历会把一个已经不存在的日期继续标成「当前」
+      if (S.currentDate === gone) { S.current = null; S.currentDate = ""; }
+      if (S.current) await openEntry(S.currentDate, { silent: true });
+      else { renderReader(); renderSideCal(); }
+      toast("已删除");
+    } catch (err) { toast("删除失败：" + err.message); }
+  }
+};
+
+/* 编辑器工具栏 */
+const TOOLS = [
+  { t: "H2", act: () => Ed.line("## "), title: "二级标题" },
+  { t: "H3", act: () => Ed.line("### "), title: "三级标题" },
+  { sep: true },
+  { t: "B", act: () => Ed.wrap("**", "**", "加粗"), title: "加粗 (Ctrl+B)", style: "font-weight:700" },
+  { t: "I", act: () => Ed.wrap("*", "*", "斜体"), title: "斜体 (Ctrl+I)", style: "font-style:italic" },
+  { t: "U", act: () => Ed.wrap("<u>", "</u>", "下划线"), title: "下划线 (Ctrl+U)", style: "text-decoration:underline" },
+  { t: "S", act: () => Ed.wrap("~~", "~~", "删除线"), title: "删除线", style: "text-decoration:line-through" },
+  { sep: true },
+  { t: "•", act: () => Ed.line("- "), title: "无序列表" },
+  { t: "1.", act: () => Ed.line("1. "), title: "有序列表" },
+  { t: "❝", act: () => Ed.line("> "), title: "引用" },
+  { t: "—", act: () => Ed.insert("\n---\n"), title: "分隔线" },
+  { sep: true },
+  { t: "🔗", act: async () => { const v = await ask("插入链接", [{ key: "u", label: "网址", placeholder: "https://" }]); if (v.u) Ed.wrap("[", `](${v.u})`, "链接文字"); }, title: "链接" },
+  { t: "🖼", act: () => Ed.pickImage(), title: "插入图片" },
+  { t: "⌨", act: () => Ed.wrap("`", "`", "代码"), title: "行内代码" },
+  { t: "▤", act: () => Ed.insert("\n| 列 1 | 列 2 |\n| --- | --- |\n|  |  |\n"), title: "表格" }
+];
+
+Ed.pickImage = function () {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.multiple = true;
+  input.onchange = async () => {
+    const files = [...(input.files || [])];
+    if (!files.length) return;
+    for (const f of files) {
+      if (f.size > 24 * 1024 * 1024) { toast(`${f.name} 超过 24MB，已跳过`); continue; }
+      try {
+        const dataUrl = await new Promise((res, rej) => {
+          const fr = new FileReader();
+          fr.onload = () => res(fr.result);
+          fr.onerror = rej;
+          fr.readAsDataURL(f);
+        });
+        const r = await API.upload({ name: f.name, dataUrl });
+        Ed.insert(`![${f.name.replace(/\.[^.]+$/, "")}](/${r.path})\n`);
+        toast("已插入 " + r.path);
+      } catch (err) { toast("上传失败：" + err.message); }
+    }
+  };
+  input.click();
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   14. Git 面板
+   ══════════════════════════════════════════════════════════════════════════ */
+async function renderGit() {
+  const box = $("#gitInfo");
+  try {
+    const st = await API.gitStatus();
+    if (!st.repo) {
+      box.innerHTML = '<div class="empty-note">这个目录还不是 Git 仓库。在项目根目录运行 <code class="mono">git init</code> 后回来刷新。</div>';
+      $("#gitCommit").disabled = true; $("#gitPush").disabled = true;
+      return;
+    }
+    $("#gitCommit").disabled = false; $("#gitPush").disabled = false;
+    box.innerHTML = `
+      <div class="tpl__row" style="align-items:flex-start;flex-direction:column;gap:8px">
+        <div style="display:flex;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:12.5px;color:var(--ink-3)">
+          <span>分支 ${esc(st.branch || "—")}</span>
+          <span>待提交 ${st.dirty}</span>
+          <span>领先 ${st.ahead == null ? "—" : st.ahead}</span>
+          <span>落后 ${st.behind == null ? "—" : st.behind}</span>
+        </div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--ink-4);word-break:break-all">origin ${esc(st.remote || "（未配置）")}</div>
+        ${st.lastCommit ? `<div style="font-size:13px;color:var(--ink-2)">最近提交 · <span class="mono">${esc(st.lastCommit.hash)}</span> ${esc(st.lastCommit.date)} · ${esc(st.lastCommit.subject)}</div>` : ""}
+        ${st.files && st.files.length ? `<div style="font-family:var(--mono);font-size:11.5px;color:var(--ink-4);max-height:150px;overflow:auto;white-space:pre-wrap">${esc(st.files.join("\n"))}</div>` : ""}
+      </div>`;
+  } catch (err) {
+    box.innerHTML = `<div class="empty-note">读取 Git 状态失败：${esc(err.message)}</div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   15. 事件绑定
+   ══════════════════════════════════════════════════════════════════════════ */
+function bind() {
+  /* 主题 */
+  const savedTheme = LS.get("theme", null);
+  if (savedTheme === "dark" || (savedTheme == null && matchMedia("(prefers-color-scheme: dark)").matches))
+    document.documentElement.dataset.dark = "1";
+  $("#btnTheme").onclick = () => {
+    const on = document.documentElement.dataset.dark === "1";
+    if (on) delete document.documentElement.dataset.dark; else document.documentElement.dataset.dark = "1";
+    LS.set("theme", on ? "light" : "dark");
+  };
+
+  /* 侧栏开关 */
+  const narrow = () => matchMedia("(max-width: 860px)").matches;
+  const applySide = () => {
+    const st = LS.get("sidebar", narrow() ? "off" : "on");
+    $("#shell").dataset.sidebar = st;
+  };
+  applySide();
+  $("#btnSide").onclick = () => {
+    const cur = $("#shell").dataset.sidebar;
+    const next = (cur === "on" || cur === "on-mobile") ? "off" : (narrow() ? "on-mobile" : "on");
+    LS.set("sidebar", next === "on-mobile" ? "off" : next);
+    $("#shell").dataset.sidebar = next;
+  };
+
+  /* 导航 */
+  $$(".tab").forEach(t => t.onclick = () => setNav(t.dataset.nav));
+  addEventListener("hashchange", () => {
+    const n = (location.hash || "").replace("#", "");
+    if (["diary", "timeline", "ledger", "settings"].includes(n) && n !== S.nav) setNav(n);
+  });
+
+  /* 顶栏动作 */
+  $("#btnPick").onclick = () => openPicker(S.currentDate || TODAY);
+  $("#btnNew").onclick = () => Ed.open(null, TODAY);
+  $("#btnAddAnniv").onclick = () => addAnniv();
+
+  /* 侧栏日历 */
+  $("#calPrev").onclick = () => { if (--S.sideM < 1) { S.sideM = 12; S.sideY--; } renderSideCal(); };
+  $("#calNext").onclick = () => { if (++S.sideM > 12) { S.sideM = 1; S.sideY++; } renderSideCal(); };
+  $("#calPrevY").onclick = () => { S.sideY--; renderSideCal(); };
+  $("#calNextY").onclick = () => { S.sideY++; renderSideCal(); };
+  $("#sideToday").onclick = () => {
+    const d = new Date(); S.sideY = d.getFullYear(); S.sideM = d.getMonth() + 1;
+    renderSideCal();
+    if (S.byDate.has(TODAY)) openEntry(TODAY); else toast("今天还没有日记，点右上角「写日记」");
+  };
+
+  /* 全局委托 */
+  document.addEventListener("click", async ev => {
+    const t = ev.target;
+    const hit = sel => t.closest(sel);
+
+    /* 侧栏快速切换（无弹窗） */
+    const sc = hit("[data-scal]");
+    if (sc) {
+      const key = sc.dataset.scal;
+      if (S.byDate.has(key)) openEntry(key);
+      else {
+        const an = annivOn(key);
+        if (an.length) toast(`${key} 没有日记｜纪念日：${an.map(a => a.title).join("、")}`, 2600);
+        else toast(`${key} 没有日记`);
+      }
+      return;
+    }
+    const ar = hit("[data-arch]");
+    if (ar) {
+      const [y, m] = ar.dataset.arch.split("-").map(Number);
+      const latest = S.entries.filter(e => e.date.startsWith(ar.dataset.arch)).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+      S.sideY = y; S.sideM = m; renderSideCal();
+      if (latest) openEntry(latest.date);
+      return;
+    }
+    const an = hit("[data-anniv]");
+    if (an) {
+      const a = S.anniversaries.find(x => x.id === an.dataset.anniv);
+      if (a) ask("编辑纪念日", [
+        { key: "title", label: "名称", value: a.title },
+        { key: "date", label: "日期", type: "date", value: a.date }
+      ]).then(async v => {
+        if (!v.title) return;
+        a.title = v.title; if (v.date) a.date = v.date;
+        await API.saveConfig({ anniversaries: S.anniversaries });
+        await reloadAll();
+        toast("已更新纪念日");
+      });
+      return;
+    }
+
+    /* 阅读区 */
+    const go = hit("[data-go]");
+    if (go) { openEntry(go.dataset.go); return; }
+    if (hit("#dayEdit")) { if (S.current) Ed.open(S.current); return; }
+
+    /* 时间线 */
+    const tl = hit("[data-tl]");
+    if (tl && !tl.classList.contains("dragged")) { openEntry(tl.dataset.tl); return; }
+
+    /* 日期检索弹窗 */
+    const pk = hit("[data-pk]");
+    if (pk) {
+      const key = pk.dataset.pk;
+      S.pickCursor = key;
+      if (!S.byDate.has(key)) { renderPicker(); toast(`${key} 没有日记`); return; }
+      Modal.close("mPick");
+      openEntry(key);
+      return;
+    }
+
+    /* 记账删除 */
+    const ld = hit("[data-leddel]");
+    if (ld) {
+      S.ledger.records = S.ledger.records.filter(r => r.id !== ld.dataset.leddel);
+      await API.saveLedger({ records: S.ledger.records });
+      renderLedger();
+      toast("已删除账目");
+      return;
+    }
+
+    /* 编辑器：标签 / 心情 / 模板 */
+    const tr = hit("[data-tagrm]");
+    if (tr) { Ed.tags.splice(+tr.dataset.tagrm, 1); Ed.renderTags(); return; }
+    const mo = hit("[data-mood]");
+    if (mo) {
+      Ed.mood = Ed.mood === mo.dataset.mood ? "" : mo.dataset.mood;
+      Ed.renderMoods();
+      return;
+    }
+    const tp = hit("[data-tpl]");
+    if (tp) {
+      const tpl = S.templates.find(x => x.id === tp.dataset.tpl);
+      if (tpl) { Ed.tplId = tpl.id; Ed.applyTemplate(tpl, true); toast("已套用模板：" + tpl.name, 1400); }
+      return;
+    }
+    const te = hit("[data-tpledit]");
+    if (te) {
+      const tpl = S.templates.find(x => x.id === te.dataset.tpledit);
+      if (!tpl) return;
+      const v = await ask("编辑栏目（每行一个）", [
+        { key: "name", label: "模板名称", value: tpl.name },
+        { key: "sections", label: "栏目", type: "textarea", value: tpl.sections.join("\n") }
+      ]);
+      tpl.name = v.name || tpl.name;
+      tpl.sections = v.sections.split("\n").map(s => s.trim()).filter(Boolean);
+      if (!tpl.sections.length) tpl.sections = ["正文"];
+      await API.saveConfig({ templates: S.templates });
+      await reloadAll(); renderSettings();
+      toast("模板已更新");
+      return;
+    }
+    const td = hit("[data-tpldel]");
+    if (td) {
+      S.templates = S.templates.filter(x => x.id !== td.dataset.tpldel);
+      await API.saveConfig({ templates: S.templates });
+      await reloadAll(); renderSettings();
+      toast("模板已删除");
+      return;
+    }
+    const ad = hit("[data-anndel]");
+    if (ad) {
+      S.anniversaries = S.anniversaries.filter(x => x.id !== ad.dataset.anndel);
+      await API.saveConfig({ anniversaries: S.anniversaries });
+      await reloadAll(); renderSettings();
+      toast("纪念日已删除");
+      return;
+    }
+
+    /* 关闭 */
+    if (hit("[data-close]")) {
+      const m = t.closest(".modal");
+      if (m) Modal.close(m.id);
+      return;
+    }
+  });
+
+  /* 编辑器控件 */
+  $("#edTools").innerHTML = TOOLS.map((x, i) =>
+    x.sep ? '<span class="sep"></span>'
+      : `<button class="btn" data-tool="${i}" title="${esc(x.title || "")}" style="${x.style || ""}">${x.t}</button>`).join("");
+  $("#edTools").onclick = ev => {
+    const b = ev.target.closest("[data-tool]");
+    if (!b) return;
+    const tool = TOOLS[+b.dataset.tool];
+    if (tool && tool.act) tool.act();
+  };
+  $("#edTagInput").onkeydown = ev => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    const v = ev.target.value.trim();
+    if (v && !Ed.tags.includes(v)) { Ed.tags.push(v); Ed.renderTags(); }
+    ev.target.value = "";
+  };
+  $("#edSave").onclick = () => Ed.save();
+  $("#edDelete").onclick = () => Ed.del();
+  $("#edPreview").onclick = () => {
+    $("#pvBody").innerHTML = md.render($("#edBody").value);
+    Modal.open("mPreview");
+  };
+  ["#edIn", "#edEx"].forEach(s => $(s).addEventListener("input", () => Ed.updateHint()));
+
+  /* 日期检索导航 */
+  const pkShift = n => {
+    let m = S.pickM + n, y = S.pickY;
+    y += Math.floor((m - 1) / 12); m = ((m - 1) % 12 + 12) % 12 + 1;
+    S.pickY = y; S.pickM = m; renderPicker();
+  };
+  $("#pkPrev").onclick = () => pkShift(-1);
+  $("#pkNext").onclick = () => pkShift(1);
+  $("#pkPrevY").onclick = () => { S.pickY--; renderPicker(); };
+  $("#pkNextY").onclick = () => { S.pickY++; renderPicker(); };
+  $("#pkLatest").onclick = () => {
+    if (!S.entries.length) { toast("还没有日记"); return; }
+    Modal.close("mPick"); openEntry(S.entries[0].date);
+  };
+
+  /* 记账 */
+  $("#ledPrev").onclick = () => { if (--S.ledM < 1) { S.ledM = 12; S.ledY--; } renderLedger(); };
+  $("#ledNext").onclick = () => { if (++S.ledM > 12) { S.ledM = 1; S.ledY++; } renderLedger(); };
+  $("#ledThisMonth").onclick = () => { const d = new Date(); S.ledY = d.getFullYear(); S.ledM = d.getMonth() + 1; renderLedger(); };
+  $("#ledAdd").onclick = async () => {
+    const date = $("#ledDate").value || TODAY;
+    const income = Number($("#ledIn").value) || 0;
+    const expense = Number($("#ledEx").value) || 0;
+    if (!income && !expense) { toast("收入和支出不能都为 0"); return; }
+    S.ledger.records.unshift({
+      id: "manual:" + Date.now().toString(36),
+      date, kind: "manual", income, expense,
+      note: $("#ledNote").value.trim(), category: ""
+    });
+    await API.saveLedger({ records: S.ledger.records });
+    S.ledger = await API.ledger();
+    $("#ledNote").value = ""; $("#ledIn").value = 0; $("#ledEx").value = 0;
+    renderLedger();
+    toast("已记一笔");
+  };
+
+  /* 设置 */
+  const saveReader = async () => {
+    applyReader();
+    await API.saveConfig({ reader: S.reader });
+  };
+  $("#setSize").oninput = e => { S.reader.fontSize = +e.target.value; $("#setSizeV").textContent = e.target.value + "px"; applyReader(); };
+  $("#setSize").onchange = saveReader;
+  $("#setLh").oninput = e => { S.reader.lineHeight = +e.target.value; $("#setLhV").textContent = Number(e.target.value).toFixed(2); applyReader(); };
+  $("#setLh").onchange = saveReader;
+  $("#setWidth").oninput = e => { S.reader.width = +e.target.value; $("#setWidthV").textContent = e.target.value + "px"; applyReader(); };
+  $("#setWidth").onchange = saveReader;
+  $("#setSerif").onclick = async () => {
+    S.reader.serif = !S.reader.serif;
+    $("#setSerif").setAttribute("aria-pressed", S.reader.serif ? "true" : "false");
+    await saveReader();
+  };
+  $("#setReset").onclick = async () => {
+    S.reader = { fontSize: 18, lineHeight: 1.9, width: 960, serif: false };
+    applyReader(); renderSettings(); await saveReader(); toast("阅读器已恢复默认");
+  };
+  $("#setLedger").onclick = async () => {
+    S.ledgerEnabled = !S.ledgerEnabled;
+    $('.tab[data-nav="ledger"]').hidden = !S.ledgerEnabled;
+    await API.saveConfig({ ledgerEnabled: S.ledgerEnabled });
+    if (!S.ledgerEnabled && S.nav === "ledger") setNav("diary");
+    renderSettings();
+    toast(S.ledgerEnabled ? "记账入口已显示在顶栏" : "记账入口已隐藏");
+  };
+  $("#setMoods").onchange = async e => {
+    const list = e.target.value.split(/\s+/).map(s => s.trim()).filter(Boolean);
+    S.moods = list.length ? list : S.moods;
+    await API.saveConfig({ moods: S.moods });
+    renderSettings(); toast("心情表情已更新");
+  };
+  $("#tplNew").onclick = async () => {
+    const v = await ask("新建模板", [
+      { key: "name", label: "模板名称", placeholder: "例如：工作 / 学习 / 心情" },
+      { key: "sections", label: "栏目（每行一个）", type: "textarea", value: "事件\n爱好\n生活" }
+    ]);
+    if (!v.name) return;
+    const sections = v.sections.split("\n").map(s => s.trim()).filter(Boolean);
+    S.templates.push({ id: "t" + Date.now().toString(36), name: v.name, sections: sections.length ? sections : ["正文"] });
+    await API.saveConfig({ templates: S.templates });
+    await reloadAll(); renderSettings();
+    toast("模板已添加");
+  };
+  $("#annivNew").onclick = () => addAnniv();
+
+  /* 时间线缩放 */
+  $("#tlZoom").value = tlZoom;
+  $("#tlZoom").oninput = e => { tlZoom = +e.target.value; LS.set("tlZoom", tlZoom); renderTimeline(); };
+
+  /* 时间线拖动 */
+  const cor = $("#corridor");
+  let drag = null, moved = 0;
+  cor.addEventListener("pointerdown", e => {
+    if (e.target.closest(".tlcell.has")) { moved = 0; }
+    drag = { x: e.clientX, left: cor.scrollLeft };
+    cor.setPointerCapture(e.pointerId);
+    cor.classList.add("dragging");
+  });
+  cor.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    moved = Math.max(moved, Math.abs(dx));
+    cor.scrollLeft = drag.left - dx;
+    if (moved > 4) cor.dataset.dragged = "1";
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    drag = null;
+    cor.classList.remove("dragging");
+    setTimeout(() => delete cor.dataset.dragged, 0);
+  };
+  cor.addEventListener("pointerup", endDrag);
+  cor.addEventListener("pointercancel", endDrag);
+  cor.addEventListener("click", e => {
+    if (cor.dataset.dragged) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  cor.addEventListener("wheel", e => {
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    cor.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+
+  /* Git */
+  $("#gitRefresh").onclick = () => renderGit();
+  $("#gitCommit").onclick = async () => {
+    $("#gitCommit").disabled = true;
+    try {
+      const r = await API.gitCommit("");
+      toast(r.committed ? "已提交" : "没有需要提交的改动");
+      renderGit();
+    } catch (err) { toast("提交失败：" + err.message, 4000); }
+    finally { $("#gitCommit").disabled = false; }
+  };
+  $("#gitPush").onclick = async () => {
+    $("#gitPush").disabled = true;
+    try {
+      const c = await API.gitCommit("");
+      const p = await API.gitPush();
+      toast("已推送到 GitHub");
+      renderGit();
+    } catch (err) { toast("推送失败：" + err.message, 6000); }
+    finally { $("#gitPush").disabled = false; }
+  };
+
+  /* 键盘 */
+  document.addEventListener("keydown", ev => {
+    const meta = ev.ctrlKey || ev.metaKey;
+    const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+
+    if (meta && ev.key.toLowerCase() === "k") { ev.preventDefault(); openPicker(S.currentDate || TODAY); return; }
+    if (meta && ev.key.toLowerCase() === "n") { ev.preventDefault(); Ed.open(null, TODAY); return; }
+    if (meta && ev.key.toLowerCase() === "s") {
+      if (!$("#mEdit").hidden) { ev.preventDefault(); Ed.save(); }
+      return;
+    }
+    if (!$("#mEdit").hidden && meta && !inField) {
+      if (ev.key.toLowerCase() === "b") { ev.preventDefault(); Ed.wrap("**", "**", "加粗"); return; }
+      if (ev.key.toLowerCase() === "i") { ev.preventDefault(); Ed.wrap("*", "*", "斜体"); return; }
+      if (ev.key.toLowerCase() === "u") { ev.preventDefault(); Ed.wrap("<u>", "</u>", "下划线"); return; }
+    }
+
+    if (ev.key === "Escape") {
+      if (Modal.isOpen()) { Modal.close(); return; }
+      if (matchMedia("(max-width: 860px)").matches) $("#shell").dataset.sidebar = "off";
+      return;
+    }
+
+    /* 日期检索弹窗内的方向键 */
+    if (Modal.top() === "mPick") {
+      const step = (dx, dy) => {
+        const base = S.pickCursor ? parseYmd(S.pickCursor) : new Date(S.pickY, S.pickM - 1, 1);
+        const d = new Date(base);
+        d.setDate(d.getDate() + dx + dy * 7);
+        S.pickY = d.getFullYear(); S.pickM = d.getMonth() + 1;
+        S.pickCursor = ymd(d);
+        renderPicker();
+      };
+      if (ev.key === "ArrowLeft") { ev.preventDefault(); step(-1, 0); return; }
+      if (ev.key === "ArrowRight") { ev.preventDefault(); step(1, 0); return; }
+      if (ev.key === "ArrowUp") { ev.preventDefault(); step(0, -1); return; }
+      if (ev.key === "ArrowDown") { ev.preventDefault(); step(0, 1); return; }
+      if (ev.key === "PageUp") { ev.preventDefault(); pkShift(-1); return; }
+      if (ev.key === "PageDown") { ev.preventDefault(); pkShift(1); return; }
+      if (ev.key === "Enter" && S.pickCursor && S.byDate.has(S.pickCursor)) {
+        ev.preventDefault(); Modal.close("mPick"); openEntry(S.pickCursor); return;
+      }
+    }
+  });
+}
+
+function openPicker(date) {
+  const d = date ? parseYmd(date) : new Date();
+  S.pickY = d.getFullYear(); S.pickM = d.getMonth() + 1; S.pickCursor = date || "";
+  renderPicker();
+  Modal.open("mPick");
+}
+
+async function addAnniv() {
+  const v = await ask("添加纪念日", [
+    { key: "title", label: "名称", placeholder: "例如：入职纪念" },
+    { key: "date", label: "日期", type: "date", value: TODAY },
+    { key: "repeat", label: "重复（yearly / monthly / once）", value: "yearly" }
+  ]);
+  if (!v.title) return;
+  const repeat = ["yearly", "monthly", "once"].includes(v.repeat) ? v.repeat : "yearly";
+  S.anniversaries.push({ id: "a" + Date.now().toString(36), title: v.title, date: v.date || TODAY, repeat });
+  await API.saveConfig({ anniversaries: S.anniversaries });
+  await reloadAll();
+  toast("已添加纪念日");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   16. 启动
+   ══════════════════════════════════════════════════════════════════════════ */
+(async function init() {
+  bind();
+  try {
+    await reloadAll();
+    S.online = true;
+    S.ledger = await API.ledger();
+  } catch (err) {
+    $("#srcLine").textContent = "离线";
+    $("#reader").innerHTML = `<div class="blank">
+      <div class="blank__t">连接不上本地服务</div>
+      <div class="blank__s">
+        编辑与记账需要本地服务。请在项目目录运行：<br>
+        <code class="mono">node _tools/server.mjs</code><br>
+        然后刷新页面。
+      </div>
+    </div>`;
+    return;
+  }
+
+  const d = new Date();
+  S.ledY = d.getFullYear(); S.ledM = d.getMonth() + 1;
+  $("#ledDate").value = TODAY;
+
+  const nav = (location.hash || "#diary").replace("#", "");
+  setNav(["diary", "timeline", "ledger", "settings"].includes(nav) ? nav : "diary");
+
+  if (S.entries.length) {
+    const start = S.byDate.has(TODAY) ? TODAY : S.entries[0].date;
+    await openEntry(start, { silent: true });
+  } else {
+    renderReader();
+  }
+})();
+</script>
+</body>
+</html>
